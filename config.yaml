@@ -1,0 +1,36 @@
+# Bookshelf Scanner Configuration
+
+detection:
+  # YOLO model for spine detection
+  # Options: yolov8n.pt (nano, fast), yolov8s.pt (small, balanced), yolov8m.pt (medium, accurate)
+  model: yolov8n.pt
+  confidence: 0.25
+  iou_threshold: 0.45
+  device: auto
+  classes: [73]
+
+extraction:
+  model: moondream-0.5b
+  revision: "2025-01-09"
+  device: auto
+  max_new_tokens: 100
+  temperature: 0.1
+
+lookup:
+  enabled: true
+  api_key: null
+  timeout: 10
+  max_results: 5
+  fallback_to_extraction: true
+
+export:
+  format: goodreads
+  default_shelf: to-read
+  include_unmatched: true
+  date_format: "%Y/%m/%d"
+
+processing:
+  max_spines: 50
+  min_spine_area: 1000
+  save_debug_images: false
+  debug_output_dir: debug/
