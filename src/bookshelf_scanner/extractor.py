@@ -130,7 +130,7 @@ Rules:
         load_kwargs = {
             "revision": self._effective_revision,
             "trust_remote_code": True,
-            "torch_dtype": dtype,
+            "dtype": dtype,
             "cache_dir": str(self.cache_dir) if self.cache_dir else None,
             "local_files_only": local_files_only,
         }

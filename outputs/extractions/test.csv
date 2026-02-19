@@ -1,21 +1,49 @@
 spine_index,image_path,title,author,confidence,raw_response
-0,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_00.jpg,The World Can Be Changed,David Hollander,0.0000,"{
-  ""title"": ""The World Can Be Changed"",
-  ""author"": ""David Hollander""
-}"
-1,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_01.jpg,The Book Title,,0.0000,"{
+0,outputs/detections/IMG_6560_crops/spine_00.jpg,The Book Title,,0.0000,"{
   ""title"": ""The Book Title"",
   ""author"": null
 }"
-2,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_02.jpg,How Basketball Can Save the World,David Hollander,0.0000,"{
+1,outputs/detections/IMG_6560_crops/spine_01.jpg,Hamlet,,0.0000,"{
+  ""title"": ""Hamlet"",
+  ""author"": null
+}"
+2,outputs/detections/IMG_6560_crops/spine_02.jpg,Gödeläscher Bach: an Eternal Golden Braid,Douglas R. Hofstadter,0.0000,"{
+  ""title"": ""G\u00f6del\u00e4scher Bach: an Eternal Golden Braid"",
+  ""author"": ""Douglas R. Hofstadter""
+}"
+3,outputs/detections/IMG_6560_crops/spine_03.jpg,Nexus,Yuvraj Noah Harari,0.0000,"{
+  ""title"": ""Nexus"",
+  ""author"": ""Yuvraj Noah Harari""
+}"
+4,outputs/detections/IMG_6560_crops/spine_04.jpg,The Book Title,Alan Moore,0.0000,"{
+  ""title"": ""The Book Title"",
+  ""author"": ""Alan Moore""
+}"
+5,outputs/detections/IMG_6560_crops/spine_05.jpg,Watchmen,Alan Moore,0.0000,"{
+  ""title"": ""Watchmen"",
+  ""author"": ""Alan Moore""
+}"
+6,outputs/detections/IMG_6560_crops/spine_06.jpg,The Organized Mind,Daniel J. Levitin,0.0000,"{
+  ""title"": ""The Organized Mind"",
+  ""author"": ""Daniel J. Levitin""
+}"
+7,outputs/detections/IMG_6560_crops/spine_07.jpg,No You Shite Guide to Math and Physics,Ivan Savoy,0.0000,"{
+  ""title"": ""No You Shite Guide to Math and Physics"",
+  ""author"": ""Ivan Savoy""
+}"
+8,outputs/detections/IMG_6560_crops/spine_08.jpg,How Basketball Can Save the World,David Hollander,0.0000,"{
   ""title"": ""How Basketball Can Save the World"",
   ""author"": ""David Hollander""
 }"
-3,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_03.jpg,The Master and His Emissary,Iain McGilchrist,0.0000,"{
+9,outputs/detections/IMG_6560_crops/spine_09.jpg,The Master and His Emissary,Iain McGilchrist,0.0000,"{
   ""title"": ""The Master and His Emissary"",
   ""author"": ""Iain McGilchrist""
 }"
-4,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_04.jpg,The Master,Bob James,0.0000,"{
-  ""title"": ""The Master"",
-  ""author"": ""Bob James""
+10,outputs/detections/IMG_6560_crops/spine_10.jpg,The Cybersecurity Handbook,Bob Seeman,0.0000,"{
+  ""title"": ""The Cybersecurity Handbook"",
+  ""author"": ""Bob Seeman""
+}"
+11,outputs/detections/IMG_6560_crops/spine_11.jpg,Creation,Bob Scranton,0.0000,"{
+  ""title"": ""Creation"",
+  ""author"": ""Bob Scranton""
 }"
