@@ -1,0 +1,2 @@
+[console_scripts]
+bookshelf-scanner = bookshelf_scanner.cli:app

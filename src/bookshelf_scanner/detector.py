@@ -4,6 +4,7 @@ detector.py - Book spine detection using YOLO.
 Detects book spines in bookshelf images using YOLOv8.
 Returns cropped spine images sorted in reading order.
 """
+# %%
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from ultralytics import YOLO
 from .schemas import DetectedSpine
 
 logger = logging.getLogger(__name__)
+# %%
 
 
 class SpineDetector:
@@ -143,3 +145,5 @@ class SpineDetector:
             row.sort(key=lambda d: d.bbox[0])
 
         return [det for row in rows for det in row]
+
+# %%

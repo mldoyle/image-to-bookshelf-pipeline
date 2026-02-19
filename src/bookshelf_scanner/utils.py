@@ -14,13 +14,3 @@ def load_image(path: str | Path) -> Image.Image:
         image = image.convert("RGB")
     return image
 
-
-def get_device() -> str:
-    """Return the best available torch device."""
-    import torch
-
-    if torch.cuda.is_available():
-        return "cuda"
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"

@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+src/bookshelf_scanner/__init__.py
+src/bookshelf_scanner/cli.py
+src/bookshelf_scanner/detector.py
+src/bookshelf_scanner/exporter.py
+src/bookshelf_scanner/extractor.py
+src/bookshelf_scanner/lookup.py
+src/bookshelf_scanner/schemas.py
+src/bookshelf_scanner/utils.py
+src/bookshelf_scanner.egg-info/PKG-INFO
+src/bookshelf_scanner.egg-info/SOURCES.txt
+src/bookshelf_scanner.egg-info/dependency_links.txt
+src/bookshelf_scanner.egg-info/entry_points.txt
+src/bookshelf_scanner.egg-info/requires.txt
+src/bookshelf_scanner.egg-info/top_level.txt
+tests/test_detector.py
