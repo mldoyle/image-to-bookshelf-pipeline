@@ -1,0 +1,21 @@
+spine_index,image_path,title,author,confidence,raw_response
+0,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_00.jpg,The World Can Be Changed,David Hollander,0.0000,"{
+  ""title"": ""The World Can Be Changed"",
+  ""author"": ""David Hollander""
+}"
+1,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_01.jpg,The Book Title,,0.0000,"{
+  ""title"": ""The Book Title"",
+  ""author"": null
+}"
+2,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_02.jpg,How Basketball Can Save the World,David Hollander,0.0000,"{
+  ""title"": ""How Basketball Can Save the World"",
+  ""author"": ""David Hollander""
+}"
+3,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_03.jpg,The Master and His Emissary,Iain McGilchrist,0.0000,"{
+  ""title"": ""The Master and His Emissary"",
+  ""author"": ""Iain McGilchrist""
+}"
+4,outputs/detections/D1BF3F73-A06F-4EF0-A456-B95E30CD737A_1_105_c_crops/spine_04.jpg,The Master,Bob James,0.0000,"{
+  ""title"": ""The Master"",
+  ""author"": ""Bob James""
+}"

@@ -1,6 +1,42 @@
 """Pydantic data models for the bookshelf scanner pipeline."""
 
-from pydantic import BaseModel, Field
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class SpineExtraction(BaseModel):
+    """Structured text extracted from a single book spine image."""
+
+    title: str = Field(..., min_length=1, max_length=500)
+    author: Optional[str] = Field(default=None, max_length=200)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    raw_response: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("title cannot be empty")
+        return cleaned
+
+    @field_validator("author")
+    @classmethod
+    def clean_author(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        return cleaned or None
+
+
+class SpineExtractionResult(BaseModel):
+    """Extraction payload tied to an individual segmented spine image."""
+
+    spine_index: int = Field(ge=0)
+    image_path: Path
+    extraction: SpineExtraction
 
 
 class DetectedSpine(BaseModel):

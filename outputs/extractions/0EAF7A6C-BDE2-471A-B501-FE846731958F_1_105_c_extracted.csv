@@ -1,0 +1,37 @@
+spine_index,image_path,title,author,confidence,raw_response
+0,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_00.jpg,A Thousand Splendour Suns,Penguin,0.0000,"{
+  ""title"": ""A Thousand Splendour Suns"",
+  ""author"": ""Penguin""
+}"
+1,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_01.jpg,The Alignment Problem,David Deutsch,0.0000,"{
+  ""title"": ""The Alignment Problem"",
+  ""author"": ""David Deutsch""
+}"
+2,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_02.jpg,The Way of King,David Deutsch,0.0000,"{
+  ""title"": ""The Way of King"",
+  ""author"": ""David Deutsch""
+}"
+3,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_03.jpg,The Way of Kings,Brandon Sanderson,0.0000,"{
+  ""title"": ""The Way of Kings"",
+  ""author"": ""Brandon Sanderson""
+}"
+4,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_04.jpg,The Book Title,Stephen Hawking,0.0000,"{
+  ""title"": ""The Book Title"",
+  ""author"": ""Stephen Hawking""
+}"
+5,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_05.jpg,Infinite Jest,David Foster Wallace,0.0000,"{
+  ""title"": ""Infinite Jest"",
+  ""author"": ""David Foster Wallace""
+}"
+6,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_06.jpg,A Promised Land,Barack Obama,0.0000,"{
+  ""title"": ""A Promised Land"",
+  ""author"": ""Barack Obama""
+}"
+7,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_07.jpg,The Book Title,,0.0000,"{
+  ""title"": ""The Book Title"",
+  ""author"": null
+}"
+8,outputs/detections/0EAF7A6C-BDE2-471A-B501-FE846731958F_1_105_c_crops/spine_08.jpg,The Book Title,,0.0000,"{
+  ""title"": ""The Book Title"",
+  ""author"": null
+}"

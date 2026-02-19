@@ -15,3 +15,4 @@ src/bookshelf_scanner.egg-info/entry_points.txt
 src/bookshelf_scanner.egg-info/requires.txt
 src/bookshelf_scanner.egg-info/top_level.txt
 tests/test_detector.py
+tests/test_extractor.py
