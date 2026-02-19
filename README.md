@@ -34,6 +34,15 @@ python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --output
 
 # Run in offline mode using only locally cached model files
 python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --local-files-only
+
+# Look up extracted titles/authors in Google Books and write full API data to CSV
+python -m bookshelf_scanner.lookup outputs/extractions/test.csv --output lookup_outputs.csv
+```
+
+Set your API key in `secrets/.env`:
+
+```bash
+GOOGLE_BOOKS_API_KEY=your_google_books_api_key
 ```
 
 ## CLI Commands
@@ -62,6 +71,21 @@ Options:
 - `--cache-dir PATH`: Optional Hugging Face model cache directory.
 - `--modules-cache-dir PATH`: Cache directory for remote model Python modules (default: `.cache/huggingface/modules`).
 - `--local-files-only`: Force offline mode and only use locally cached model files.
+
+### `python -m bookshelf_scanner.lookup`
+
+Look up extraction CSV rows (`title`/`author`) in Google Books and export all returned item fields to a CSV.
+
+```bash
+python -m bookshelf_scanner.lookup outputs/extractions/test.csv --output lookup_outputs.csv
+```
+
+Options:
+
+- `--api-key KEY`: Override API key directly.
+- `--env-file PATH`: Env file path for `GOOGLE_BOOKS_API_KEY` (default: `secrets/.env`).
+- `--max-results N`: Results returned per title query (default: `5`).
+- `--timeout N`: HTTP timeout in seconds (default: `10`).
 
 ## Note on `bookshelf-scanner`
 
