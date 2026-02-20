@@ -1,4 +1,4 @@
-"""Minimal Flask API for live webcam spine detection."""
+"""Flask API for webcam spine detection and one-shot capture lookup flows."""
 
 from __future__ import annotations
 
@@ -143,6 +143,7 @@ def create_app(
     request_counter = {"count": 0}
 
     def get_detector() -> SpineDetector:
+        # Lazy init keeps startup fast and avoids loading YOLO unless needed.
         detector = detector_cache.get("detector")
         if detector is None:
             detector = detector_factory()
@@ -151,6 +152,7 @@ def create_app(
         return detector
 
     def get_extractor() -> BookExtractor:
+        # Extraction model is heavy; load once and reuse across capture requests.
         extractor = extractor_cache.get("extractor")
         if extractor is None:
             extractor = extractor_factory()
@@ -159,6 +161,7 @@ def create_app(
         return extractor
 
     def get_books_client() -> GoogleBooksClient:
+        # Reuse a session-backed client for repeated Google Books calls.
         books_client = books_client_cache.get("books_client")
         if books_client is None:
             books_client = books_client_factory()
@@ -286,6 +289,7 @@ def create_app(
 
         started_total = time.perf_counter()
         started_detect = time.perf_counter()
+        # Stage 1: detect candidate spines from full-frame capture.
         spine_images, spines = detector.detect_all(
             image=image,
             min_area=min_area,
@@ -296,6 +300,7 @@ def create_app(
         started_extract_lookup = time.perf_counter()
         spine_results: list[dict[str, Any]] = []
         for crop_image, spine in zip(spine_images, spines):
+            # Stage 2: run OCR/extraction per cropped spine.
             extraction = extractor.extract(crop_image)
             lookup_error: str | None = None
             lookup_total_items = 0
@@ -306,6 +311,7 @@ def create_app(
 
             if title and not title.startswith("["):
                 try:
+                    # Stage 3: lookup best metadata candidates for extracted text.
                     lookup_payload = books_client.lookup(title=title, author=author)
                     lookup_total_items = int(lookup_payload.get("totalItems") or 0)
                     raw_items = lookup_payload.get("items") or []

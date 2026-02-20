@@ -7,6 +7,7 @@ Scan photos of your bookshelf and export to Goodreads or StoryGraph.
 - **Automatic spine detection** using YOLO object detection
 - **Text extraction** using Moondream 0.5B vision-language model
 - **Metadata lookup** via Google Books API
+- **Webcam harness** for live detection/readiness tuning and manual capture+lookup
 - **Goodreads-compatible CSV export** for easy import
 
 ## Installation
@@ -103,16 +104,34 @@ Exposed routes:
 - `POST /detect/spines`: return detection boxes for one frame.
 - `POST /scan/capture`: detect spines, run extraction, and perform Google Books lookup.
 - `GET /health`: health check.
+- `GET /`: basic route/help message.
 
 Options:
 
 - `--host HOST`: Bind address (default: `127.0.0.1`).
 - `--port PORT`: Bind port (default: `5000`).
 - `--model-path PATH`: YOLO model path (default: `yolov8n.pt` at repo root).
-- `--confidence FLOAT`: Detector confidence threshold (default: `0.25`).
+- `--confidence FLOAT`: Detector confidence threshold (default: `0.15`).
 - `--iou-threshold FLOAT`: NMS IoU threshold (default: `0.45`).
 - `--device DEVICE`: `auto`, `cpu`, `cuda`, `mps` (default: `auto`).
 - `--classes CSV`: Comma-separated YOLO class IDs (default: `73` for books).
+
+## Webcam Harness Workflow
+
+Use the harness to tune capture-readiness before moving into React Native camera integration.
+
+1. Start API:
+`python -m bookshelf_scanner.web_api --host 127.0.0.1 --port 5000`
+2. Start harness:
+`cd web-harness && npm install && npm run dev`
+3. In the harness UI:
+- Set detector mode to `endpoint`.
+- Use `http://127.0.0.1:5000/detect/spines` for live detections.
+- Use `http://127.0.0.1:5000/scan/capture` for manual capture + extraction + lookup.
+
+Notes:
+- `Mock detections` mode is synthetic and does not use the backend model.
+- Stop the API with `Ctrl+C` (not `Ctrl+Z`, which only suspends the process).
 
 ## Note on `bookshelf-scanner`
 

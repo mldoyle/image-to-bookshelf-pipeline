@@ -1,12 +1,42 @@
 # React Native Live Scanner Implementation Plan
 
+## 0. Current Implementation Status (Updated)
+
+This section reflects what is already implemented in this repository.
+
+### Completed
+
+1. `packages/scanner-core` is implemented and tested.
+- IoU tracker, quality scorer, ready-state machine, cooldown logic.
+- Deterministic replay-style tests and synthetic unit coverage.
+
+2. `web-harness` is implemented and running.
+- Live webcam preview with overlay boxes.
+- `mock` and backend `endpoint` detector modes.
+- Live debug panel with detector/parse/track metrics.
+- Runtime tuning controls for thresholds.
+- Scene-level readiness gates to reduce false-ready states.
+- Manual **Capture & Lookup** button to run full backend scan.
+
+3. Flask API for webcam integration is implemented.
+- `POST /detect/spines` for frame-level box detection.
+- `POST /scan/capture` for detect -> extract text -> Google Books lookup.
+- `GET /health` and `GET /` helper endpoints.
+
+### In Progress / Next
+
+1. Mobile React Native app (`mobile/`) is scaffolded with camera + overlay + capture + review flow.
+2. Android emulator camera-loop validation is still pending.
+3. iOS simulator state-flow validation is still pending.
+4. Physical phone validation is still pending.
+
 ## 1. Scope (MVP Only)
 
 Build a React Native app that:
 1. Streams camera preview.
 2. Detects book spines in realtime and draws boxes.
 3. Turns boxes green when capture quality is sufficient.
-4. Auto-captures one photo when readiness is stable.
+4. Uses on-device guide overlays during preview and manual user capture.
 5. Sends captured photo to the existing backend extraction flow and returns parsed book candidates.
 
 Not in MVP:
@@ -29,7 +59,7 @@ Important constraint:
 
 ```text
 mobile/
-  app/
+  App.tsx
   src/
     camera/
       CameraScreen.tsx
@@ -99,6 +129,8 @@ export type FrameDetections = {
 
 ## Step 1: Build shared scoring/tracking core (required first)
 
+Status: COMPLETE
+
 Actions:
 1. Create `packages/scanner-core` with TypeScript build config.
 2. Implement IoU tracker:
@@ -124,6 +156,8 @@ Exit criteria:
 
 ## Step 2: Build laptop webcam harness (required before mobile tuning)
 
+Status: COMPLETE (extended with manual capture + lookup flow for backend validation)
+
 Actions:
 1. Create `web-harness` app (Vite + React TS).
 2. Use `navigator.mediaDevices.getUserMedia({ video: true })`.
@@ -146,43 +180,35 @@ Exit criteria:
 
 ## Step 3: Create RN app camera loop
 
+Status: IMPLEMENTED (awaiting emulator/device run validation)
+
 Actions:
 1. Scaffold RN app under `mobile/`.
 2. Install and configure:
-- `react-native-vision-camera`
-- frame processor dependency required by chosen setup.
+- Expo React Native setup (`expo-camera`) for Android emulator, iOS simulator flow checks, and iPhone testing.
 3. Implement `CameraScreen.tsx`:
 - request permissions.
 - start preview.
-4. Implement native frame processor bridge to emit `FrameDetections`.
+4. Implement on-device preview guidance overlay and keep manual capture control on the device.
 5. Reuse `scanner-core` unchanged for track/score/ready decisions.
 6. Render overlay boxes above camera preview.
+7. Send one captured photo to `/scan/capture` and show accept/reject review feed.
 
 Deliverables:
 - `mobile/src/camera/CameraScreen.tsx`
 - `mobile/src/camera/FrameProcessorBridge.ts`
 - `mobile/src/overlay/BoxOverlay.tsx`
-
-Exit criteria:
-- Live preview + boxes + green readiness running on Android emulator build.
-
-## Step 4: Implement capture controller
-
-Actions:
-1. Add `CaptureController.ts`:
-- listens for ready-state trigger events.
-- calls camera photo capture once.
-- enforces 1500ms cooldown.
-2. Save photo path + detection metadata JSON locally.
-3. Add manual capture button as fallback.
-
-Deliverables:
+- `mobile/src/api/extractionClient.ts`
 - `mobile/src/capture/CaptureController.ts`
+- `mobile/src/App.tsx`
+- `mobile/README.md`
 
 Exit criteria:
-- Exactly one capture per ready event; no duplicate captures during cooldown.
+- Live preview + guide overlay + manual capture + result review feed are implemented and ready to validate on emulator/device.
 
 ## Step 5: Emulator validation (must pass before phone testing)
+
+Status: NOT STARTED
 
 Actions:
 1. Android Emulator:
@@ -199,6 +225,8 @@ Exit criteria:
 - Android emulator behaves reliably for 3 continuous test runs.
 
 ## Step 6: Real device validation (required for release decisions)
+
+Status: NOT STARTED
 
 Actions:
 1. Run on one iPhone and one Android phone.
@@ -219,6 +247,8 @@ Exit criteria:
 - FPS >= 18, trigger-to-capture delay <= 300ms, stable capture in good light.
 
 ## Step 7: Integrate backend extraction
+
+Status: PARTIALLY COMPLETE FOR WEB HARNESS + RN IMPLEMENTATION ADDED (validation pending)
 
 Actions:
 1. Define POST endpoint contract:
@@ -252,6 +282,6 @@ These must be implemented as runtime-configurable constants:
 MVP is done only when all are true:
 1. Live camera boxes render in RN app.
 2. Boxes turn green based on shared scoring logic.
-3. App auto-captures exactly once per ready event.
+3. App enables capture when ready/mostly-ready and performs one scan per user capture.
 4. Capture uploads to backend and returns candidate book list.
 5. Workflow validated on both a physical Android and physical iPhone.

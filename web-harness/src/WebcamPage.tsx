@@ -148,6 +148,7 @@ const computeSceneQuality = (
   frameHeight: number,
   thresholds: HarnessThresholds
 ): SceneQuality => {
+  // Scene-level gates prevent a single random box from marking the frame as ready.
   if (frameWidth <= 0 || frameHeight <= 0 || tracks.length === 0) {
     return {
       passes: false,
@@ -471,6 +472,7 @@ export function WebcamPage() {
         detections.boxes,
         detections.frameTimestampMs
       );
+      // Evaluate scene composition before any per-track readiness scoring.
       const sceneQuality = computeSceneQuality(
         tracks,
         detections.frameWidth,
@@ -520,6 +522,7 @@ export function WebcamPage() {
             }))
           )
         : readyMachineRef.current.update({
+            // Keep state machine "not ready" while scene quality gates are failing.
             timestampMs: detections.frameTimestampMs,
             score: null,
             reasons: sceneQuality.reasons
@@ -693,6 +696,7 @@ export function WebcamPage() {
     setCaptureError(null);
 
     try {
+      // Manual capture flow: snapshot current frame and send once to backend pipeline.
       const snapshotDataUrl = captureVideoFrame(videoEl, snapshotCanvas);
       setLatestCaptureDataUrl(snapshotDataUrl);
 
