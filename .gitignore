@@ -3,6 +3,8 @@
 .cache/
 __pycache__/
 *.pyc
+node_modules/
+dist/
 
 # Local secrets
 secrets/.env

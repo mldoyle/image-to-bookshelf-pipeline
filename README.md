@@ -37,6 +37,9 @@ python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --local-
 
 # Look up extracted titles/authors in Google Books and write full API data to CSV
 python -m bookshelf_scanner.lookup outputs/extractions/test.csv --output lookup_outputs.csv
+
+# Run local Flask API for live webcam spine detection
+python -m bookshelf_scanner.web_api --host 127.0.0.1 --port 5000
 ```
 
 Set your API key in `secrets/.env`:
@@ -86,6 +89,30 @@ Options:
 - `--env-file PATH`: Env file path for `GOOGLE_BOOKS_API_KEY` (default: `secrets/.env`).
 - `--max-results N`: Results returned per title query (default: `5`).
 - `--timeout N`: HTTP timeout in seconds (default: `10`).
+
+### `python -m bookshelf_scanner.web_api`
+
+Start a local Flask server for the webcam harness endpoint.
+
+```bash
+python -m bookshelf_scanner.web_api [OPTIONS]
+```
+
+Exposed routes:
+
+- `POST /detect/spines`: return detection boxes for one frame.
+- `POST /scan/capture`: detect spines, run extraction, and perform Google Books lookup.
+- `GET /health`: health check.
+
+Options:
+
+- `--host HOST`: Bind address (default: `127.0.0.1`).
+- `--port PORT`: Bind port (default: `5000`).
+- `--model-path PATH`: YOLO model path (default: `yolov8n.pt` at repo root).
+- `--confidence FLOAT`: Detector confidence threshold (default: `0.25`).
+- `--iou-threshold FLOAT`: NMS IoU threshold (default: `0.45`).
+- `--device DEVICE`: `auto`, `cpu`, `cuda`, `mps` (default: `auto`).
+- `--classes CSV`: Comma-separated YOLO class IDs (default: `73` for books).
 
 ## Note on `bookshelf-scanner`
 

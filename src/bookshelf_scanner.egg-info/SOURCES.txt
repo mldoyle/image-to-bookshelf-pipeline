@@ -8,6 +8,7 @@ src/bookshelf_scanner/extractor.py
 src/bookshelf_scanner/lookup.py
 src/bookshelf_scanner/schemas.py
 src/bookshelf_scanner/utils.py
+src/bookshelf_scanner/web_api.py
 src/bookshelf_scanner.egg-info/PKG-INFO
 src/bookshelf_scanner.egg-info/SOURCES.txt
 src/bookshelf_scanner.egg-info/dependency_links.txt
@@ -16,3 +17,4 @@ src/bookshelf_scanner.egg-info/requires.txt
 src/bookshelf_scanner.egg-info/top_level.txt
 tests/test_detector.py
 tests/test_extractor.py
+tests/test_lookup.py

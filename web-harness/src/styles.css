@@ -192,6 +192,40 @@ input[type="checkbox"] {
   border: 1px solid rgba(23, 54, 84, 0.2);
 }
 
+.capture-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.capture-subtitle {
+  margin: 0.8rem 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.lookup-results {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.lookup-row {
+  border: 1px solid rgba(23, 54, 84, 0.16);
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  background: #ffffff;
+}
+
+.lookup-row p {
+  margin: 0.2rem 0;
+  font-size: 0.83rem;
+}
+
+.lookup-row a {
+  color: #0f5f96;
+}
+
 .error {
   margin: 0.45rem 0 0;
   color: #b4232f;
