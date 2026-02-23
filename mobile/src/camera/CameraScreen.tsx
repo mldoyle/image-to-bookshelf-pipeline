@@ -11,7 +11,7 @@ import {
   View,
   useWindowDimensions
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView, type CameraOrientation, useCameraPermissions } from "expo-camera";
 import { runCaptureLookup } from "../api/extractionClient";
 import BackIcon from "../icons/BackIcon";
 import OrientationNoHintIcon from "../icons/OrientationNoHintIcon";
@@ -49,9 +49,13 @@ type Point = {
 
 type GuideHint = "zoom_in" | "zoom_out" | "steady";
 
-const GUIDE_ANALYSIS_INTERVAL_MS = 1400;
+const GUIDE_ANALYSIS_INTERVAL_MS = 900;
 const CAPTURE_LOOKUP_MAX_RESULTS = 3;
 const CAPTURE_DELAY_MS = 650;
+const LANDSCAPE_HINT_FADE_DELAY_MS = 2000;
+const LANDSCAPE_HINT_FADE_DURATION_MS = 280;
+const GUIDE_AREA_RATIO_MIN = 0.28;
+const GUIDE_AREA_RATIO_MAX = 0.72;
 const TOP_BAR_INSET = 14;
 const TOP_BAR_OFFSET = 52;
 
@@ -71,6 +75,7 @@ export function CameraScreen({
   const cameraRef = useRef<CameraView | null>(null);
   const guideIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const guideAnalysisInFlightRef = useRef(false);
+  const guideAnalysisTokenRef = useRef(0);
   const lookupQueueRef = useRef<QueueItem[]>([]);
   const lookupWorkerInFlightRef = useRef(false);
   const cooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,28 +84,55 @@ export function CameraScreen({
   );
 
   const rotateAnim = useRef(new Animated.Value(0)).current;
+  const landscapeHintOpacity = useRef(new Animated.Value(0)).current;
   const flashAnim = useRef(new Animated.Value(0)).current;
   const flyAnim = useRef(new Animated.Value(0)).current;
 
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
   const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({ width: 0, height: 0 });
+  const [cameraOrientation, setCameraOrientation] = useState<CameraOrientation | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureCooldown, setCaptureCooldown] = useState(false);
   const [detectedBox, setDetectedBox] = useState<GuideBox | null>(null);
   const [detectionFrameWidth, setDetectionFrameWidth] = useState(0);
   const [detectionFrameHeight, setDetectionFrameHeight] = useState(0);
-  const [guideScore, setGuideScore] = useState(0);
   const [lookupInFlightCount, setLookupInFlightCount] = useState(0);
   const [queuedLookupCount, setQueuedLookupCount] = useState(0);
+  const [showLandscapeNoArrowHint, setShowLandscapeNoArrowHint] = useState(false);
 
   const [flyThumbnailUri, setFlyThumbnailUri] = useState<string | null>(null);
   const [flyStart, setFlyStart] = useState<Point>({ x: 0, y: 0 });
   const [flyEnd, setFlyEnd] = useState<Point>({ x: 0, y: 0 });
 
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const isLandscape = screenWidth > screenHeight;
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const phoneIsLandscape =
+    cameraOrientation === "landscapeLeft" || cameraOrientation === "landscapeRight";
+  const isLandscape =
+    overlayLayout.width > 0 && overlayLayout.height > 0
+      ? overlayLayout.width > overlayLayout.height
+      : windowWidth > windowHeight;
+
+  const rotateIconBaseRotation = useMemo(() => {
+    if (cameraOrientation === "landscapeLeft") {
+      return "90deg";
+    }
+    if (cameraOrientation === "landscapeRight") {
+      return "-90deg";
+    }
+    if (cameraOrientation === "portraitUpsideDown") {
+      return "180deg";
+    }
+    return "0deg";
+  }, [cameraOrientation]);
+
+  const noArrowHintRotation = useMemo(() => {
+    if (cameraOrientation === "landscapeRight") {
+      return "-90deg";
+    }
+    return "90deg";
+  }, [cameraOrientation]);
 
   const stopGuideLoop = useCallback(() => {
     if (guideIntervalRef.current !== null) {
@@ -128,7 +160,7 @@ export function CameraScreen({
   }, [permission, requestPermission]);
 
   useEffect(() => {
-    if (isLandscape) {
+    if (phoneIsLandscape) {
       rotateAnim.stopAnimation();
       rotateAnim.setValue(0);
       return;
@@ -155,7 +187,45 @@ export function CameraScreen({
     return () => {
       loop.stop();
     };
-  }, [isLandscape, rotateAnim]);
+  }, [phoneIsLandscape, rotateAnim]);
+
+  useEffect(() => {
+    if (!phoneIsLandscape) {
+      landscapeHintOpacity.stopAnimation();
+      landscapeHintOpacity.setValue(0);
+      setShowLandscapeNoArrowHint(false);
+      return;
+    }
+
+    setShowLandscapeNoArrowHint(true);
+    landscapeHintOpacity.stopAnimation();
+    landscapeHintOpacity.setValue(1);
+
+    const fade = Animated.timing(landscapeHintOpacity, {
+      toValue: 0,
+      delay: LANDSCAPE_HINT_FADE_DELAY_MS,
+      duration: LANDSCAPE_HINT_FADE_DURATION_MS,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true
+    });
+
+    fade.start(({ finished }) => {
+      if (finished) {
+        setShowLandscapeNoArrowHint(false);
+      }
+    });
+
+    return () => {
+      fade.stop();
+    };
+  }, [landscapeHintOpacity, phoneIsLandscape]);
+
+  useEffect(() => {
+    guideAnalysisTokenRef.current += 1;
+    setDetectedBox(null);
+    setDetectionFrameWidth(0);
+    setDetectionFrameHeight(0);
+  }, [phoneIsLandscape]);
 
   const runGuideAnalysis = useCallback(async () => {
     if (guideAnalysisInFlightRef.current || captureBusy || !cameraReady) {
@@ -168,6 +238,7 @@ export function CameraScreen({
     }
 
     guideAnalysisInFlightRef.current = true;
+    const analysisToken = guideAnalysisTokenRef.current;
 
     try {
       const frame = await camera.takePictureAsync({
@@ -187,10 +258,13 @@ export function CameraScreen({
         return;
       }
 
+      if (analysisToken !== guideAnalysisTokenRef.current) {
+        return;
+      }
+
       setDetectionFrameWidth(estimate.frameWidth);
       setDetectionFrameHeight(estimate.frameHeight);
       setDetectedBox(estimate.box);
-      setGuideScore(estimate.score);
     } finally {
       guideAnalysisInFlightRef.current = false;
     }
@@ -203,6 +277,7 @@ export function CameraScreen({
     }
 
     stopGuideLoop();
+    void runGuideAnalysis();
     guideIntervalRef.current = setInterval(() => {
       void runGuideAnalysis();
     }, GUIDE_ANALYSIS_INTERVAL_MS);
@@ -210,7 +285,7 @@ export function CameraScreen({
     return () => {
       stopGuideLoop();
     };
-  }, [cameraReady, captureBusy, permission?.granted, runGuideAnalysis, stopGuideLoop]);
+  }, [cameraReady, captureBusy, permission?.granted, phoneIsLandscape, runGuideAnalysis, stopGuideLoop]);
 
   const processLookupQueue = useCallback(async () => {
     if (lookupWorkerInFlightRef.current) {
@@ -266,8 +341,8 @@ export function CameraScreen({
   const onReviewButtonLayout = useCallback((event: LayoutChangeEvent) => {
     const { x, y, width, height } = event.nativeEvent.layout;
     reviewButtonLayoutRef.current = {
-      x: x + TOP_BAR_INSET,
-      y: y + TOP_BAR_OFFSET,
+      x,
+      y,
       width,
       height
     };
@@ -286,14 +361,17 @@ export function CameraScreen({
   }, [detectedBox, detectionFrameHeight, detectionFrameWidth]);
 
   const guideHint = useMemo<GuideHint>(() => {
-    if (!detectedBox || guideScore < 0.42) {
+    if (!detectedBox || guideAreaRatio <= 0) {
+      return "steady";
+    }
+    if (guideAreaRatio < GUIDE_AREA_RATIO_MIN) {
       return "zoom_in";
     }
-    if (guideAreaRatio > 0.72) {
+    if (guideAreaRatio > GUIDE_AREA_RATIO_MAX) {
       return "zoom_out";
     }
     return "steady";
-  }, [detectedBox, guideAreaRatio, guideScore]);
+  }, [detectedBox, guideAreaRatio]);
 
   const rotateInterpolation = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -308,13 +386,13 @@ export function CameraScreen({
             y: reviewButtonLayoutRef.current.y + reviewButtonLayoutRef.current.height / 2 - 18
           }
         : {
-            x: screenWidth - 62,
+            x: windowWidth - 62,
             y: 52
           };
 
       const origin = {
-        x: screenWidth / 2 - 44,
-        y: screenHeight - 196
+        x: windowWidth / 2 - 44,
+        y: windowHeight - 196
       };
 
       setFlyThumbnailUri(photoUri);
@@ -340,7 +418,7 @@ export function CameraScreen({
         setFlyThumbnailUri(null);
       });
     },
-    [flashAnim, flyAnim, screenHeight, screenWidth]
+    [flashAnim, flyAnim, windowHeight, windowWidth]
   );
 
   const onCapturePress = useCallback(async () => {
@@ -437,6 +515,10 @@ export function CameraScreen({
         }}
         style={styles.camera}
         facing="back"
+        responsiveOrientationWhenOrientationLocked
+        onResponsiveOrientationChanged={(event) => {
+          setCameraOrientation(event.orientation);
+        }}
         onCameraReady={() => setCameraReady(true)}
       />
 
@@ -463,34 +545,33 @@ export function CameraScreen({
         </Animated.View>
       ) : null}
 
-      <View style={styles.topRow}>
-        <Pressable style={styles.topIconButton} onPress={onBack}>
-          <BackIcon />
-        </Pressable>
+      <Pressable style={[styles.topIconButton, styles.backButton]} onPress={onBack}>
+        <BackIcon />
+      </Pressable>
 
-        <Pressable
-          style={[styles.reviewButton, !reviewEnabled && styles.reviewButtonDisabled]}
-          onPress={onOpenReview}
-          disabled={!reviewEnabled}
-          onLayout={onReviewButtonLayout}
-        >
-          {reviewEnabled ? <SelectCapturesIcon /> : <SelectNoCapturesIcon />}
-          {queueBusy ? <ActivityIndicator size="small" color={colors.textPrimary} style={styles.queueSpinner} /> : null}
-        </Pressable>
-      </View>
+      <Pressable
+        style={[styles.reviewButton, styles.reviewButtonAbsolute, !reviewEnabled && styles.reviewButtonDisabled]}
+        onPress={onOpenReview}
+        disabled={!reviewEnabled}
+        onLayout={onReviewButtonLayout}
+      >
+        {reviewEnabled ? <SelectCapturesIcon /> : <SelectNoCapturesIcon />}
+        {queueBusy ? <ActivityIndicator size="small" color={colors.textPrimary} style={styles.queueSpinner} /> : null}
+      </Pressable>
 
       <View style={styles.iconStack} pointerEvents="none">
-        {!isLandscape ? (
-          <Animated.View style={{ transform: [{ rotate: rotateInterpolation }] }}>
+        {!phoneIsLandscape ? (
+          <Animated.View
+            style={{ transform: [{ rotate: rotateIconBaseRotation }, { rotate: rotateInterpolation }] }}
+          >
             <RotatePortraitIcon />
           </Animated.View>
-        ) : guideHint === "zoom_in" ? (
-          <ZoomInHintIcon />
-        ) : guideHint === "zoom_out" ? (
-          <ZoomOutHintIcon />
-        ) : (
-          <OrientationNoHintIcon />
-        )}
+        ) : null}
+        {phoneIsLandscape && showLandscapeNoArrowHint ? (
+          <Animated.View style={{ opacity: landscapeHintOpacity, transform: [{ rotate: noArrowHintRotation }] }}>
+            <OrientationNoHintIcon />
+          </Animated.View>
+        ) : null}
       </View>
 
       {captureError ? (
@@ -499,19 +580,22 @@ export function CameraScreen({
         </View>
       ) : null}
 
-      <View style={styles.bottomRow}>
-        <Pressable
-          style={[styles.captureButton, !captureEnabled && styles.captureButtonDisabled]}
-          onPress={() => void onCapturePress()}
-          disabled={!captureEnabled}
-        >
-          {captureBusy ? (
-            <ActivityIndicator color={colors.textPrimary} />
-          ) : (
-            <View style={styles.captureButtonInner} />
-          )}
-        </Pressable>
-      </View>
+      <Pressable
+        style={({ pressed }) => [
+          styles.captureButton,
+          styles.captureButtonAbsolute,
+          pressed && captureEnabled && styles.captureButtonPressed,
+          !captureEnabled && styles.captureButtonDisabled
+        ]}
+        onPress={() => void onCapturePress()}
+        disabled={!captureEnabled}
+      >
+        {captureBusy ? (
+          <ActivityIndicator color={colors.black} />
+        ) : (
+          <View style={styles.captureButtonInner} />
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -528,14 +612,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.white
   },
-  topRow: {
+  backButton: {
     position: "absolute",
     top: TOP_BAR_OFFSET,
-    left: TOP_BAR_INSET,
-    right: TOP_BAR_INSET,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
+    left: TOP_BAR_INSET
   },
   reviewButton: {
     minWidth: 44,
@@ -543,6 +623,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 2
+  },
+  reviewButtonAbsolute: {
+    position: "absolute",
+    top: TOP_BAR_OFFSET,
+    right: TOP_BAR_INSET
   },
   topIconButton: {
     width: 44,
@@ -584,13 +669,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700"
   },
-  bottomRow: {
+  captureButtonAbsolute: {
     position: "absolute",
     left: "50%",
     marginLeft: -37,
-    bottom: 42,
-    width: 74,
-    height: 74
+    bottom: 42
   },
   captureButton: {
     width: 74,
@@ -598,19 +681,23 @@ const styles = StyleSheet.create({
     borderRadius: 37,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: colors.textPrimary,
-    backgroundColor: "rgba(20,24,28,0.42)",
-    transform: [{ rotate: "0deg" }]
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.9)",
+    backgroundColor: colors.white
+  },
+  captureButtonPressed: {
+    backgroundColor: "#c9c9c9"
   },
   captureButtonDisabled: {
-    opacity: 0.6
+    opacity: 0.65
   },
   captureButtonInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: colors.white
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: "rgba(0,0,0,0.18)",
+    backgroundColor: "transparent"
   },
   flyingThumb: {
     position: "absolute",
