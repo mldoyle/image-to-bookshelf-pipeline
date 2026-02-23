@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable
 
+import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from PIL import Image
@@ -210,7 +211,24 @@ def create_app(
         max_results = max(1, min(40, max_results))
 
         books_client = get_books_client()
-        payload = books_client.search(query=query, max_results=max_results)
+        try:
+            payload = books_client.search(query=query, max_results=max_results)
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else 502
+            if status_code == 429:
+                retry_after = (
+                    (exc.response.headers or {}).get("Retry-After") if exc.response is not None else None
+                )
+                response_payload: dict[str, Any] = {
+                    "error": "google_books_rate_limited",
+                    "message": "Google Books API rate limit exceeded. Please retry shortly.",
+                }
+                if retry_after is not None:
+                    response_payload["retryAfter"] = retry_after
+                return jsonify(response_payload), 429
+            logger.warning("Google Books lookup failed: %s", exc)
+            return jsonify({"error": "google_books_upstream_error"}), 502
+
         raw_items = payload.get("items") or []
         return jsonify(
             {

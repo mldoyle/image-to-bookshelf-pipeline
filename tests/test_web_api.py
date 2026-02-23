@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import requests
 from PIL import Image
 
 from bookshelf_scanner.web_api import create_app
@@ -122,6 +123,30 @@ def test_books_search_returns_compact_payload():
     assert holder["client"].search_calls == [("dune", 7)]
 
 
+def test_books_search_returns_rate_limited_error_for_google_429():
+    class _RateLimitedBooksClient(_FakeBooksClient):
+        def search(self, query: str, max_results: int | None = None) -> dict:
+            response = requests.Response()
+            response.status_code = 429
+            response.headers["Retry-After"] = "30"
+            raise requests.HTTPError("429 Client Error: Too Many Requests", response=response)
+
+    app = create_app(
+        detector_factory=lambda: _FakeDetector(),
+        extractor_factory=lambda: _FakeExtractor(),
+        books_client_factory=lambda: _RateLimitedBooksClient(),
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    response = client.get("/books/search?q=dune&maxResults=7")
+    payload = response.get_json()
+
+    assert response.status_code == 429
+    assert payload["error"] == "google_books_rate_limited"
+    assert payload["retryAfter"] == "30"
+
+
 def test_scan_capture_compact_lookup_item_includes_extended_metadata():
     client, _ = _build_test_client()
     image_file, filename = _build_image_payload()
@@ -149,4 +174,3 @@ def test_scan_capture_compact_lookup_item_includes_extended_metadata():
     assert lookup_item["imageLinks"]["smallThumbnail"] == "https://example.com/small.jpg"
     assert lookup_item["publisher"] == "Ace"
     assert lookup_item["infoLink"] == "https://books.google.com/dune"
-
