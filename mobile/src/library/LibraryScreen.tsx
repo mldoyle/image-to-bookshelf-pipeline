@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   FlatList,
   Pressable,
@@ -9,7 +9,6 @@ import {
   View
 } from "react-native";
 import { FilterBar } from "./components/FilterBar";
-import { FilterSheet } from "./components/FilterSheet";
 import { LibraryListItem } from "./components/LibraryListItem";
 import { LibraryGridItem } from "./components/LibraryGridItem";
 import { FabMenu } from "./components/FabMenu";
@@ -32,6 +31,7 @@ type LibraryScreenProps = {
   onViewModeChange: (mode: LibraryViewMode) => void;
   onFiltersChange: (filters: LibraryFilters) => void;
   onToggleLoaned: (bookId: string) => void;
+  onOpenBook: (book: LibraryBook) => void;
   onOpenCamera: () => void;
   onOpenSearch: () => void;
 };
@@ -47,13 +47,15 @@ export function LibraryScreen({
   onViewModeChange,
   onFiltersChange,
   onToggleLoaned,
+  onOpenBook,
   onOpenCamera,
   onOpenSearch
 }: LibraryScreenProps) {
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const visibleBooks = useMemo(() => selectVisibleLibraryBooks(books, filters), [books, filters]);
   const filterOptions = useMemo(() => deriveLibraryFilterOptions(books), [books]);
   const hasFilters = hasActiveFilters(filters);
+  const isLoopbackApi =
+    apiBaseUrl.includes("127.0.0.1") || apiBaseUrl.includes("localhost");
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -80,20 +82,28 @@ export function LibraryScreen({
 
       <View style={styles.apiWrap}>
         <Text style={styles.apiLabel}>API</Text>
-        <TextInput
-          style={styles.apiInput}
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={apiBaseUrl}
-          onChangeText={onApiBaseUrlChange}
-          placeholder="http://127.0.0.1:5001"
-          placeholderTextColor={colors.textMuted}
-        />
+        <View style={styles.apiColumn}>
+          <TextInput
+            style={styles.apiInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={apiBaseUrl}
+            onChangeText={onApiBaseUrlChange}
+            placeholder="http://127.0.0.1:5001"
+            placeholderTextColor={colors.textMuted}
+          />
+          {isLoopbackApi ? (
+            <Text style={styles.apiHint}>
+              iPhone on Wi-Fi: use your Mac LAN IP (for example `http://192.168.x.x:5001`).
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       <FilterBar
         filters={filters}
-        onOpenFilters={() => setFiltersOpen(true)}
+        options={filterOptions}
+        onFiltersChange={onFiltersChange}
         onClearFilters={() => onFiltersChange(DEFAULT_LIBRARY_FILTERS)}
       />
 
@@ -131,26 +141,18 @@ export function LibraryScreen({
             data={visibleBooks}
             key="grid"
             keyExtractor={(item) => item.id}
-            numColumns={3}
+            numColumns={4}
             columnWrapperStyle={styles.gridRow}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
               <LibraryGridItem
                 book={item}
-                onToggleLoaned={onToggleLoaned}
+                onOpenBook={onOpenBook}
               />
             )}
           />
         )}
       </View>
-
-      <FilterSheet
-        visible={filtersOpen}
-        filters={filters}
-        options={filterOptions}
-        onApply={onFiltersChange}
-        onClose={() => setFiltersOpen(false)}
-      />
 
       <FabMenu onCameraPress={onOpenCamera} onSearchPress={onOpenSearch} />
     </SafeAreaView>
@@ -210,7 +212,6 @@ const styles = StyleSheet.create({
     width: 28
   },
   apiInput: {
-    flex: 1,
     height: 38,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -218,6 +219,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     color: colors.textPrimary,
     paddingHorizontal: spacing.md
+  },
+  apiColumn: {
+    flex: 1,
+    gap: 4
+  },
+  apiHint: {
+    color: colors.warning,
+    fontSize: typography.caption
   },
   content: {
     flex: 1
@@ -227,7 +236,7 @@ const styles = StyleSheet.create({
     paddingBottom: listBottomPadding
   },
   gridRow: {
-    gap: spacing.sm
+    gap: spacing.xs
   },
   emptyState: {
     marginTop: spacing.xxl,
@@ -260,4 +269,3 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   }
 });
-

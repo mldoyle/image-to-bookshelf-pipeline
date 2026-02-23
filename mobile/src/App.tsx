@@ -1,8 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  NativeModules,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { CameraScreen } from "./camera/CameraScreen";
-import { applyDecision, buildFeedItems, summarizeDecisions } from "./capture/CaptureController";
+import { applyDecision, buildFeedItems, dedupeFeedItems, summarizeDecisions } from "./capture/CaptureController";
+import { BookProfileScreen } from "./library/BookProfileScreen";
 import { LibraryScreen } from "./library/LibraryScreen";
 import { SearchScreen } from "./library/SearchScreen";
 import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
@@ -16,9 +27,9 @@ import {
 } from "./library/storage";
 import { colors } from "./theme/colors";
 import { DEFAULT_LIBRARY_FILTERS, type LibraryBook, type LibraryFilters, type LibraryViewMode } from "./types/library";
-import type { CaptureScanResponse, FeedItem, LookupBookItem } from "./types/vision";
+import type { FeedItem, LookupBookItem } from "./types/vision";
 
-type AppPhase = "library" | "camera" | "results" | "search";
+type AppPhase = "library" | "camera" | "results" | "search" | "book_profile";
 
 const defaultApiBaseUrl = Platform.select({
   android: "http://10.0.2.2:5001",
@@ -26,19 +37,55 @@ const defaultApiBaseUrl = Platform.select({
   default: "http://127.0.0.1:5001"
 });
 
+const resolveMetroHost = (): string | null => {
+  const sourceCode = NativeModules.SourceCode as { scriptURL?: string } | undefined;
+  const scriptURL = sourceCode?.scriptURL;
+  if (!scriptURL) {
+    return null;
+  }
+
+  const match = scriptURL.match(/^https?:\/\/([^/:]+):\d+/i);
+  if (!match) {
+    return null;
+  }
+
+  const host = match[1];
+  if (!host) {
+    return null;
+  }
+
+  return host;
+};
+
 const formatSource = (source: FeedItem["source"]): string =>
   source === "lookup" ? "Google Books" : "OCR fallback";
 
 export default function App() {
+  const metroHost = resolveMetroHost();
+  const resolvedDefaultApiBaseUrl = useMemo(() => {
+    if (Platform.OS === "android") {
+      return defaultApiBaseUrl ?? "http://10.0.2.2:5001";
+    }
+    if (!metroHost || metroHost === "localhost" || metroHost === "127.0.0.1") {
+      return defaultApiBaseUrl ?? "http://127.0.0.1:5001";
+    }
+    return `http://${metroHost}:5001`;
+  }, [metroHost]);
+
   const [phase, setPhase] = useState<AppPhase>("library");
-  const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl ?? "http://127.0.0.1:5001");
-  const [captureResult, setCaptureResult] = useState<CaptureScanResponse | null>(null);
+  const [apiBaseUrl, setApiBaseUrl] = useState(resolvedDefaultApiBaseUrl);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+
+  const [captureSessionItems, setCaptureSessionItems] = useState<FeedItem[]>([]);
+  const [captureSessionCount, setCaptureSessionCount] = useState(0);
+  const [captureSessionSpineCount, setCaptureSessionSpineCount] = useState(0);
+  const captureSequenceRef = useRef(0);
 
   const [libraryReady, setLibraryReady] = useState(false);
   const [libraryBooks, setLibraryBooks] = useState<LibraryBook[]>([]);
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>("list");
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
+  const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +129,19 @@ export default function App() {
     () => feedItems.filter((item) => item.decision === "accepted"),
     [feedItems]
   );
+
+  const resetCaptureSession = useCallback(() => {
+    captureSequenceRef.current = 0;
+    setCaptureSessionItems([]);
+    setCaptureSessionCount(0);
+    setCaptureSessionSpineCount(0);
+    setFeedItems([]);
+  }, []);
+
+  const startCameraSession = useCallback(() => {
+    resetCaptureSession();
+    setPhase("camera");
+  }, [resetCaptureSession]);
 
   const updateBooks = useCallback((incoming: LibraryBook[]) => {
     setLibraryBooks((current) => {
@@ -128,10 +188,9 @@ export default function App() {
       });
     }
 
-    setCaptureResult(null);
-    setFeedItems([]);
+    resetCaptureSession();
     setPhase("library");
-  }, [acceptedItems]);
+  }, [acceptedItems, resetCaptureSession]);
 
   if (!libraryReady) {
     return (
@@ -146,14 +205,34 @@ export default function App() {
   if (phase === "camera") {
     return (
       <>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <CameraScreen
           apiBaseUrl={apiBaseUrl}
-          onBack={() => setPhase("library")}
-          onCaptureComplete={(capture) => {
-            setCaptureResult(capture);
-            setFeedItems(buildFeedItems(capture));
+          reviewEnabled={captureSessionItems.length > 0}
+          onBack={() => {
+            resetCaptureSession();
+            setPhase("library");
+          }}
+          onOpenReview={() => {
+            const dedupedItems = dedupeFeedItems(captureSessionItems).map((item) => ({
+              ...item,
+              decision: null
+            }));
+            setFeedItems(dedupedItems);
             setPhase("results");
+          }}
+          onCaptureProcessed={(capture) => {
+            const captureId = captureSequenceRef.current;
+            captureSequenceRef.current += 1;
+            const prefixedItems = buildFeedItems(capture).map((item) => ({
+              ...item,
+              id: `capture-${captureId}-${item.id}`,
+              decision: null
+            }));
+
+            setCaptureSessionItems((current) => [...current, ...prefixedItems]);
+            setCaptureSessionCount((count) => count + 1);
+            setCaptureSessionSpineCount((count) => count + capture.spines.length);
           }}
         />
       </>
@@ -175,15 +254,32 @@ export default function App() {
     );
   }
 
+  if (phase === "book_profile" && selectedBook) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <BookProfileScreen
+          book={selectedBook}
+          onBack={() => {
+            setPhase("library");
+          }}
+        />
+      </>
+    );
+  }
+
   if (phase === "results") {
     return (
       <SafeAreaView style={styles.resultsScreen}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
 
         <View style={styles.headerBlock}>
           <Text style={styles.title}>Review Books</Text>
           <Text style={styles.subtitle}>
-            {captureResult?.spines.length ?? 0} detected spines | accepted: {decisionSummary.accepted} | rejected: {decisionSummary.rejected}
+            {captureSessionCount} captures | {captureSessionSpineCount} detected spines | {feedItems.length} unique books
+          </Text>
+          <Text style={styles.subtitle}>
+            accepted: {decisionSummary.accepted} | rejected: {decisionSummary.rejected}
           </Text>
         </View>
 
@@ -254,9 +350,7 @@ export default function App() {
           <Pressable
             style={styles.secondaryButton}
             onPress={() => {
-              setCaptureResult(null);
-              setFeedItems([]);
-              setPhase("camera");
+              startCameraSession();
             }}
           >
             <Text style={styles.secondaryButtonLabel}>Scan Again</Text>
@@ -287,7 +381,11 @@ export default function App() {
         onViewModeChange={onViewModeChange}
         onFiltersChange={onFiltersChange}
         onToggleLoaned={onToggleLoaned}
-        onOpenCamera={() => setPhase("camera")}
+        onOpenBook={(book) => {
+          setSelectedBook(book);
+          setPhase("book_profile");
+        }}
+        onOpenCamera={startCameraSession}
         onOpenSearch={() => setPhase("search")}
       />
     </>
@@ -308,14 +406,16 @@ const styles = StyleSheet.create({
   },
   resultsScreen: {
     flex: 1,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: colors.background,
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 16
   },
   headerBlock: {
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.surface,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: 14,
     gap: 6,
     marginBottom: 12
@@ -323,21 +423,21 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: "800",
-    color: "#0f172a"
+    color: colors.textPrimary
   },
   subtitle: {
     fontSize: 14,
-    color: "#334155"
+    color: colors.textSecondary
   },
   stackWrap: {
     flex: 1,
     gap: 16
   },
   bookCard: {
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: colors.border,
     padding: 18,
     minHeight: 280,
     justifyContent: "center",
@@ -346,16 +446,16 @@ const styles = StyleSheet.create({
   bookTitle: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#0f172a"
+    color: colors.textPrimary
   },
   bookAuthor: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#1e293b"
+    color: colors.textSecondary
   },
   bookMeta: {
     fontSize: 14,
-    color: "#475569"
+    color: colors.textMuted
   },
   actionRow: {
     flexDirection: "row",
@@ -373,36 +473,38 @@ const styles = StyleSheet.create({
     gap: 6
   },
   rejectButton: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 2,
-    borderColor: "#dc2626"
+    borderColor: colors.warning
   },
   acceptButton: {
-    backgroundColor: "#dcfce7",
+    backgroundColor: colors.accentMuted,
     borderWidth: 2,
-    borderColor: "#16a34a"
+    borderColor: colors.accent
   },
   actionGlyph: {
     fontSize: 36,
     fontWeight: "800",
-    color: "#0f172a"
+    color: colors.textPrimary
   },
   actionText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0f172a"
+    color: colors.textPrimary
   },
   doneWrap: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.surface,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: 14,
     gap: 12
   },
   doneTitle: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#0f172a"
+    color: colors.textPrimary
   },
   acceptedList: {
     flex: 1
@@ -414,18 +516,18 @@ const styles = StyleSheet.create({
   acceptedItem: {
     padding: 12,
     borderRadius: 12,
-    backgroundColor: "#f8fafc",
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: "#e2e8f0"
+    borderColor: colors.border
   },
   acceptedTitle: {
     fontSize: 16,
-    color: "#0f172a",
+    color: colors.textPrimary,
     fontWeight: "700"
   },
   acceptedMeta: {
     fontSize: 13,
-    color: "#475569"
+    color: colors.textSecondary
   },
   footerRow: {
     marginTop: 12,
@@ -435,14 +537,15 @@ const styles = StyleSheet.create({
   secondaryButton: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#0f172a",
+    borderColor: colors.textPrimary,
     borderRadius: 10,
     height: 40,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    backgroundColor: colors.surface
   },
   secondaryButtonLabel: {
-    color: "#0f172a",
+    color: colors.textPrimary,
     fontWeight: "700"
   }
 });

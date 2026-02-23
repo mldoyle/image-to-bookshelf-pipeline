@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   LayoutChangeEvent,
   Pressable,
   StyleSheet,
@@ -12,14 +13,24 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { runCaptureLookup } from "../api/extractionClient";
+import BackIcon from "../icons/BackIcon";
+import OrientationNoHintIcon from "../icons/OrientationNoHintIcon";
+import RotatePortraitIcon from "../icons/RotatePortraitIcon";
+import SelectCapturesIcon from "../icons/SelectCapturesIcon";
+import SelectNoCapturesIcon from "../icons/SelectNoCapturesIcon";
+import ZoomInHintIcon from "../icons/ZoomInHintIcon";
+import ZoomOutHintIcon from "../icons/ZoomOutHintIcon";
 import { GuideOverlay } from "../overlay/GuideOverlay";
-import { estimateGuideBoxFromJpegBase64, type GuideBox } from "./localGuideDetector";
+import { colors } from "../theme/colors";
 import type { CaptureScanResponse } from "../types/vision";
+import { estimateGuideBoxFromJpegBase64, type GuideBox } from "./localGuideDetector";
 
 type CameraScreenProps = {
   apiBaseUrl: string;
+  reviewEnabled: boolean;
   onBack: () => void;
-  onCaptureComplete: (capture: CaptureScanResponse) => void;
+  onOpenReview: () => void;
+  onCaptureProcessed: (capture: CaptureScanResponse) => void;
 };
 
 type OverlayLayout = {
@@ -27,8 +38,22 @@ type OverlayLayout = {
   height: number;
 };
 
+type QueueItem = {
+  photoUri: string;
+};
+
+type Point = {
+  x: number;
+  y: number;
+};
+
+type GuideHint = "zoom_in" | "zoom_out" | "steady";
+
 const GUIDE_ANALYSIS_INTERVAL_MS = 1400;
 const CAPTURE_LOOKUP_MAX_RESULTS = 3;
+const CAPTURE_DELAY_MS = 650;
+const TOP_BAR_INSET = 14;
+const TOP_BAR_OFFSET = 52;
 
 const makeEndpointUrl = (baseUrl: string, path: string): string => {
   const trimmedBase = baseUrl.trim().replace(/\/+$/, "");
@@ -36,24 +61,63 @@ const makeEndpointUrl = (baseUrl: string, path: string): string => {
   return `${trimmedBase}${trimmedPath}`;
 };
 
-export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraScreenProps) {
+export function CameraScreen({
+  apiBaseUrl,
+  reviewEnabled,
+  onBack,
+  onOpenReview,
+  onCaptureProcessed
+}: CameraScreenProps) {
   const cameraRef = useRef<CameraView | null>(null);
   const guideIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const guideAnalysisInFlightRef = useRef(false);
+  const lookupQueueRef = useRef<QueueItem[]>([]);
+  const lookupWorkerInFlightRef = useRef(false);
+  const cooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reviewButtonLayoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(
+    null
+  );
+
   const rotateAnim = useRef(new Animated.Value(0)).current;
+  const flashAnim = useRef(new Animated.Value(0)).current;
+  const flyAnim = useRef(new Animated.Value(0)).current;
 
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
   const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({ width: 0, height: 0 });
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [captureInFlight, setCaptureInFlight] = useState(false);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [captureCooldown, setCaptureCooldown] = useState(false);
   const [detectedBox, setDetectedBox] = useState<GuideBox | null>(null);
   const [detectionFrameWidth, setDetectionFrameWidth] = useState(0);
   const [detectionFrameHeight, setDetectionFrameHeight] = useState(0);
   const [guideScore, setGuideScore] = useState(0);
+  const [lookupInFlightCount, setLookupInFlightCount] = useState(0);
+  const [queuedLookupCount, setQueuedLookupCount] = useState(0);
+
+  const [flyThumbnailUri, setFlyThumbnailUri] = useState<string | null>(null);
+  const [flyStart, setFlyStart] = useState<Point>({ x: 0, y: 0 });
+  const [flyEnd, setFlyEnd] = useState<Point>({ x: 0, y: 0 });
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isLandscape = screenWidth > screenHeight;
+
+  const stopGuideLoop = useCallback(() => {
+    if (guideIntervalRef.current !== null) {
+      clearInterval(guideIntervalRef.current);
+      guideIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopGuideLoop();
+      if (cooldownTimeoutRef.current !== null) {
+        clearTimeout(cooldownTimeoutRef.current);
+        cooldownTimeoutRef.current = null;
+      }
+    };
+  }, [stopGuideLoop]);
 
   useEffect(() => {
     if (!permission || permission.granted || !permission.canAskAgain) {
@@ -74,13 +138,13 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
       Animated.sequence([
         Animated.timing(rotateAnim, {
           toValue: 1,
-          duration: 700,
+          duration: 900,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true
         }),
         Animated.timing(rotateAnim, {
           toValue: 0,
-          duration: 700,
+          duration: 900,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true
         })
@@ -93,21 +157,8 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
     };
   }, [isLandscape, rotateAnim]);
 
-  const stopGuideLoop = useCallback(() => {
-    if (guideIntervalRef.current !== null) {
-      clearInterval(guideIntervalRef.current);
-      guideIntervalRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopGuideLoop();
-    };
-  }, [stopGuideLoop]);
-
   const runGuideAnalysis = useCallback(async () => {
-    if (!isLandscape || guideAnalysisInFlightRef.current || captureInFlight || !cameraReady) {
+    if (guideAnalysisInFlightRef.current || captureBusy || !cameraReady) {
       return;
     }
 
@@ -143,10 +194,10 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
     } finally {
       guideAnalysisInFlightRef.current = false;
     }
-  }, [cameraReady, captureInFlight, isLandscape]);
+  }, [cameraReady, captureBusy]);
 
   useEffect(() => {
-    if (!cameraReady || !permission?.granted || !isLandscape || captureInFlight) {
+    if (!cameraReady || !permission?.granted || captureBusy) {
       stopGuideLoop();
       return;
     }
@@ -159,50 +210,147 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
     return () => {
       stopGuideLoop();
     };
-  }, [cameraReady, captureInFlight, isLandscape, permission?.granted, runGuideAnalysis, stopGuideLoop]);
+  }, [cameraReady, captureBusy, permission?.granted, runGuideAnalysis, stopGuideLoop]);
 
-  useEffect(() => {
-    if (isLandscape) {
+  const processLookupQueue = useCallback(async () => {
+    if (lookupWorkerInFlightRef.current) {
       return;
     }
 
-    setDetectedBox(null);
-    setGuideScore(0);
-    setDetectionFrameWidth(0);
-    setDetectionFrameHeight(0);
-  }, [isLandscape]);
+    const next = lookupQueueRef.current.shift();
+    setQueuedLookupCount(lookupQueueRef.current.length);
+    if (!next) {
+      return;
+    }
+
+    lookupWorkerInFlightRef.current = true;
+    setLookupInFlightCount((count) => count + 1);
+
+    try {
+      const response = await runCaptureLookup({
+        photoUri: next.photoUri,
+        captureEndpointUrl: makeEndpointUrl(apiBaseUrl, "/scan/capture"),
+        minArea: 300,
+        maxDetections: 40,
+        maxLookupResults: CAPTURE_LOOKUP_MAX_RESULTS,
+        timeoutMs: 120000
+      });
+
+      onCaptureProcessed(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "capture_lookup_failed";
+      setCaptureError(message);
+    } finally {
+      lookupWorkerInFlightRef.current = false;
+      setLookupInFlightCount((count) => Math.max(0, count - 1));
+      if (lookupQueueRef.current.length > 0) {
+        void processLookupQueue();
+      }
+    }
+  }, [apiBaseUrl, onCaptureProcessed]);
+
+  const enqueueLookup = useCallback(
+    (photoUri: string) => {
+      lookupQueueRef.current.push({ photoUri });
+      setQueuedLookupCount(lookupQueueRef.current.length);
+      void processLookupQueue();
+    },
+    [processLookupQueue]
+  );
 
   const onPreviewLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setOverlayLayout({ width, height });
   }, []);
 
+  const onReviewButtonLayout = useCallback((event: LayoutChangeEvent) => {
+    const { x, y, width, height } = event.nativeEvent.layout;
+    reviewButtonLayoutRef.current = {
+      x: x + TOP_BAR_INSET,
+      y: y + TOP_BAR_OFFSET,
+      width,
+      height
+    };
+  }, []);
+
   const captureEnabled = useMemo(
-    () => cameraReady && isLandscape && !captureInFlight,
-    [cameraReady, captureInFlight, isLandscape]
+    () => cameraReady && !captureBusy && !captureCooldown,
+    [cameraReady, captureBusy, captureCooldown]
   );
 
-  const guidanceText = useMemo(() => {
-    if (!isLandscape) {
-      return "Rotate to capture more books.";
+  const guideAreaRatio = useMemo(() => {
+    if (!detectedBox || detectionFrameWidth <= 0 || detectionFrameHeight <= 0) {
+      return 0;
     }
-    if (guideScore >= 0.65) {
-      return "Guide lock looks good. Capture when ready.";
+    return (detectedBox.w * detectedBox.h) / (detectionFrameWidth * detectionFrameHeight);
+  }, [detectedBox, detectionFrameHeight, detectionFrameWidth]);
+
+  const guideHint = useMemo<GuideHint>(() => {
+    if (!detectedBox || guideScore < 0.42) {
+      return "zoom_in";
     }
-    if (detectedBox) {
-      return "Adjust framing to include one full shelf row inside the guide.";
+    if (guideAreaRatio > 0.72) {
+      return "zoom_out";
     }
-    return "Center one shelf section in the guide and hold steady.";
-  }, [detectedBox, guideScore, isLandscape]);
+    return "steady";
+  }, [detectedBox, guideAreaRatio, guideScore]);
+
+  const rotateInterpolation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "-90deg"]
+  });
+
+  const triggerCaptureFeedback = useCallback(
+    (photoUri: string) => {
+      const destination = reviewButtonLayoutRef.current
+        ? {
+            x: reviewButtonLayoutRef.current.x + reviewButtonLayoutRef.current.width / 2 - 18,
+            y: reviewButtonLayoutRef.current.y + reviewButtonLayoutRef.current.height / 2 - 18
+          }
+        : {
+            x: screenWidth - 62,
+            y: 52
+          };
+
+      const origin = {
+        x: screenWidth / 2 - 44,
+        y: screenHeight - 196
+      };
+
+      setFlyThumbnailUri(photoUri);
+      setFlyStart(origin);
+      setFlyEnd(destination);
+      flashAnim.setValue(0.35);
+      flyAnim.setValue(0);
+
+      Animated.parallel([
+        Animated.timing(flashAnim, {
+          toValue: 0,
+          duration: 240,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true
+        }),
+        Animated.timing(flyAnim, {
+          toValue: 1,
+          duration: 520,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true
+        })
+      ]).start(() => {
+        setFlyThumbnailUri(null);
+      });
+    },
+    [flashAnim, flyAnim, screenHeight, screenWidth]
+  );
 
   const onCapturePress = useCallback(async () => {
     const camera = cameraRef.current;
-    if (!captureEnabled || !camera) {
+    if (!captureEnabled || !camera || guideAnalysisInFlightRef.current) {
       return;
     }
 
     setCaptureError(null);
-    setCaptureInFlight(true);
+    setCaptureBusy(true);
 
     try {
       const capture = await camera.takePictureAsync({
@@ -215,28 +363,28 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
         throw new Error("capture_uri_missing");
       }
 
-      const response = await runCaptureLookup({
-        photoUri: capture.uri,
-        captureEndpointUrl: makeEndpointUrl(apiBaseUrl, "/scan/capture"),
-        minArea: 300,
-        maxDetections: 40,
-        maxLookupResults: CAPTURE_LOOKUP_MAX_RESULTS,
-        timeoutMs: 120000
-      });
+      triggerCaptureFeedback(capture.uri);
+      enqueueLookup(capture.uri);
 
-      onCaptureComplete(response);
+      setCaptureCooldown(true);
+      if (cooldownTimeoutRef.current !== null) {
+        clearTimeout(cooldownTimeoutRef.current);
+      }
+      cooldownTimeoutRef.current = setTimeout(() => {
+        setCaptureCooldown(false);
+      }, CAPTURE_DELAY_MS);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "capture_lookup_failed";
+      const message = error instanceof Error ? error.message : "capture_failed";
       setCaptureError(message);
     } finally {
-      setCaptureInFlight(false);
+      setCaptureBusy(false);
     }
-  }, [apiBaseUrl, captureEnabled, onCaptureComplete]);
+  }, [captureEnabled, enqueueLookup, triggerCaptureFeedback]);
 
   if (!permission) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color="#0f172a" size="large" />
+        <ActivityIndicator color={colors.textPrimary} size="large" />
         <Text style={styles.helperText}>Checking camera permission...</Text>
       </View>
     );
@@ -259,66 +407,108 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
     );
   }
 
-  const rotateInterpolation = rotateAnim.interpolate({
+  const flyX = flyAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0deg", "90deg"]
+    outputRange: [flyStart.x, flyEnd.x]
   });
 
+  const flyY = flyAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [flyStart.y, flyEnd.y]
+  });
+
+  const flyScale = flyAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.28]
+  });
+
+  const flyOpacity = flyAnim.interpolate({
+    inputRange: [0, 0.9, 1],
+    outputRange: [0.98, 0.95, 0]
+  });
+
+  const queueBusy = lookupInFlightCount > 0 || queuedLookupCount > 0;
+
   return (
-    <View style={styles.screen}>
-      <View style={styles.headerRow}>
-        <Pressable style={styles.secondaryButton} onPress={onBack}>
-          <Text style={styles.secondaryButtonLabel}>Back</Text>
+    <View style={styles.screen} onLayout={onPreviewLayout}>
+      <CameraView
+        ref={(instance) => {
+          cameraRef.current = instance;
+        }}
+        style={styles.camera}
+        facing="back"
+        onCameraReady={() => setCameraReady(true)}
+      />
+
+      <GuideOverlay
+        width={overlayLayout.width}
+        height={overlayLayout.height}
+        isLandscape={isLandscape}
+      />
+
+      <Animated.View pointerEvents="none" style={[styles.flash, { opacity: flashAnim }]} />
+
+      {flyThumbnailUri ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.flyingThumb,
+            {
+              transform: [{ translateX: flyX }, { translateY: flyY }, { scale: flyScale }],
+              opacity: flyOpacity
+            }
+          ]}
+        >
+          <Image source={{ uri: flyThumbnailUri }} style={styles.flyingThumbImage} />
+        </Animated.View>
+      ) : null}
+
+      <View style={styles.topRow}>
+        <Pressable style={styles.topIconButton} onPress={onBack}>
+          <BackIcon />
         </Pressable>
-        <View style={styles.statusChip}>
-          <Text style={styles.statusChipText}>{isLandscape ? "Aligned" : "Rotate"}</Text>
-        </View>
+
+        <Pressable
+          style={[styles.reviewButton, !reviewEnabled && styles.reviewButtonDisabled]}
+          onPress={onOpenReview}
+          disabled={!reviewEnabled}
+          onLayout={onReviewButtonLayout}
+        >
+          {reviewEnabled ? <SelectCapturesIcon /> : <SelectNoCapturesIcon />}
+          {queueBusy ? <ActivityIndicator size="small" color={colors.textPrimary} style={styles.queueSpinner} /> : null}
+        </Pressable>
       </View>
 
-      <View style={styles.previewContainer} onLayout={onPreviewLayout}>
-        <CameraView
-          ref={(instance) => {
-            cameraRef.current = instance;
-          }}
-          style={styles.camera}
-          facing="back"
-          onCameraReady={() => setCameraReady(true)}
-        />
-
-        <GuideOverlay
-          width={overlayLayout.width}
-          height={overlayLayout.height}
-          isLandscape={isLandscape}
-          detectedBox={detectedBox}
-          detectionFrameWidth={detectionFrameWidth}
-          detectionFrameHeight={detectionFrameHeight}
-          detectionScore={guideScore}
-        />
-      </View>
-
-      <View style={styles.panel}>
+      <View style={styles.iconStack} pointerEvents="none">
         {!isLandscape ? (
-          <View style={styles.rotatePromptRow}>
-            <Animated.View
-              style={[styles.rotateIcon, { transform: [{ rotate: rotateInterpolation }] }]}
-            />
-            <Text style={styles.rotatePromptText}>Rotate to capture more books.</Text>
-          </View>
-        ) : null}
+          <Animated.View style={{ transform: [{ rotate: rotateInterpolation }] }}>
+            <RotatePortraitIcon />
+          </Animated.View>
+        ) : guideHint === "zoom_in" ? (
+          <ZoomInHintIcon />
+        ) : guideHint === "zoom_out" ? (
+          <ZoomOutHintIcon />
+        ) : (
+          <OrientationNoHintIcon />
+        )}
+      </View>
 
-        <Text style={styles.guidanceText}>{guidanceText}</Text>
-        <Text style={styles.metricText}>local guide score: {guideScore.toFixed(3)}</Text>
-        {captureError ? <Text style={styles.errorText}>capture error: {captureError}</Text> : null}
+      {captureError ? (
+        <View style={styles.errorChip}>
+          <Text style={styles.errorText}>{captureError}</Text>
+        </View>
+      ) : null}
 
+      <View style={styles.bottomRow}>
         <Pressable
           style={[styles.captureButton, !captureEnabled && styles.captureButtonDisabled]}
           onPress={() => void onCapturePress()}
           disabled={!captureEnabled}
         >
-          {captureInFlight ? (
-            <ActivityIndicator color="#ffffff" />
+          {captureBusy ? (
+            <ActivityIndicator color={colors.textPrimary} />
           ) : (
-            <Text style={styles.captureButtonLabel}>Capture & Lookup</Text>
+            <View style={styles.captureButtonInner} />
           )}
         </Pressable>
       </View>
@@ -329,126 +519,151 @@ export function CameraScreen({ apiBaseUrl, onBack, onCaptureComplete }: CameraSc
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#f8fafc",
-    paddingTop: 54,
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    gap: 14
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  statusChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#0f172a"
-  },
-  statusChipText: {
-    color: "#ffffff",
-    fontWeight: "700"
-  },
-  previewContainer: {
-    borderRadius: 20,
-    overflow: "hidden",
-    backgroundColor: "#111827",
-    aspectRatio: 3 / 4
+    backgroundColor: colors.background
   },
   camera: {
-    width: "100%",
-    height: "100%"
+    ...StyleSheet.absoluteFillObject
   },
-  panel: {
-    gap: 8,
-    backgroundColor: "#ffffff",
-    padding: 14,
-    borderRadius: 14
+  flash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.white
   },
-  rotatePromptRow: {
+  topRow: {
+    position: "absolute",
+    top: TOP_BAR_OFFSET,
+    left: TOP_BAR_INSET,
+    right: TOP_BAR_INSET,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10
+    justifyContent: "space-between"
   },
-  rotateIcon: {
-    width: 16,
-    height: 28,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: "#0f172a"
-  },
-  rotatePromptText: {
-    fontSize: 14,
-    color: "#0f172a",
-    fontWeight: "700"
-  },
-  guidanceText: {
-    fontSize: 15,
-    color: "#0f172a",
-    fontWeight: "600"
-  },
-  metricText: {
-    fontSize: 13,
-    color: "#475569"
-  },
-  errorText: {
-    fontSize: 13,
-    color: "#b91c1c"
-  },
-  captureButton: {
-    marginTop: 6,
-    height: 48,
-    borderRadius: 12,
+  reviewButton: {
+    minWidth: 44,
+    minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#15803d"
+    padding: 2
+  },
+  topIconButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    backgroundColor: "rgba(20,24,28,0.35)"
+  },
+  reviewButtonDisabled: {
+    opacity: 0.55
+  },
+  queueSpinner: {
+    position: "absolute",
+    right: -5,
+    top: -5
+  },
+  iconStack: {
+    position: "absolute",
+    top: 108,
+    left: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14
+  },
+  errorChip: {
+    position: "absolute",
+    top: 154,
+    left: 14,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: "rgba(112,48,48,0.9)",
+    borderWidth: 1,
+    borderColor: colors.accent
+  },
+  errorText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  bottomRow: {
+    position: "absolute",
+    left: "50%",
+    marginLeft: -37,
+    bottom: 42,
+    width: 74,
+    height: 74
+  },
+  captureButton: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: colors.textPrimary,
+    backgroundColor: "rgba(20,24,28,0.42)",
+    transform: [{ rotate: "0deg" }]
   },
   captureButtonDisabled: {
-    backgroundColor: "#94a3b8"
+    opacity: 0.6
   },
-  captureButtonLabel: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 16
+  captureButtonInner: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.white
+  },
+  flyingThumb: {
+    position: "absolute",
+    width: 88,
+    height: 88,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.textPrimary,
+    backgroundColor: colors.surfaceElevated
+  },
+  flyingThumbImage: {
+    width: "100%",
+    height: "100%"
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f8fafc",
+    backgroundColor: colors.background,
     paddingHorizontal: 24,
     gap: 12
   },
   title: {
     fontSize: 20,
-    color: "#0f172a",
+    color: colors.textPrimary,
     fontWeight: "700"
   },
   helperText: {
-    color: "#475569",
+    color: colors.textSecondary,
     textAlign: "center"
   },
   primaryButton: {
     marginTop: 8,
-    backgroundColor: "#0f172a",
+    backgroundColor: colors.accent,
     borderRadius: 12,
     paddingHorizontal: 18,
     paddingVertical: 12
   },
   primaryButtonLabel: {
-    color: "#ffffff",
+    color: colors.surface,
     fontWeight: "700"
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: "#0f172a",
+    borderColor: colors.textPrimary,
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 8
+    paddingVertical: 8,
+    backgroundColor: "rgba(20,24,28,0.5)"
   },
   secondaryButtonLabel: {
-    color: "#0f172a",
-    fontWeight: "600"
+    color: colors.textPrimary,
+    fontWeight: "700"
   }
 });

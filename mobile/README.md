@@ -73,3 +73,15 @@ npm run ios
 - Preview guidance runs locally on device; the server pipeline runs only after capture.
 - This app targets Expo SDK 54 (Expo Go iOS requires latest SDK support).
 - Orientation is set to `default` so users can rotate to landscape for capture.
+
+## SVG icon build
+
+- Place exported icon SVGs in `/Users/mattdoyle/Projects/image-to-bookshelf/mobile/assets/icons`.
+- Regenerate icon components with:
+
+```bash
+cd /Users/mattdoyle/Projects/image-to-bookshelf/mobile
+npm run icons:build
+```
+
+- The generated React Native icon components are written to `/Users/mattdoyle/Projects/image-to-bookshelf/mobile/src/icons`.

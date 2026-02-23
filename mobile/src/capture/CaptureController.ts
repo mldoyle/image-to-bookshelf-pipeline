@@ -61,6 +61,52 @@ export const buildFeedItems = (capture: CaptureScanResponse): FeedItem[] => {
   return items;
 };
 
+const normalize = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const dedupeKey = (item: FeedItem): string => {
+  const lookupId = item.metadata?.id?.trim();
+  if (lookupId) {
+    return `lookup:${lookupId}`;
+  }
+
+  const title = normalize(item.title);
+  const author = normalize(item.author);
+  return `${title}::${author}`;
+};
+
+export const dedupeFeedItems = (items: FeedItem[]): FeedItem[] => {
+  const byKey = new Map<string, FeedItem>();
+
+  items.forEach((item) => {
+    const key = dedupeKey(item);
+    const existing = byKey.get(key);
+
+    if (!existing) {
+      byKey.set(key, item);
+      return;
+    }
+
+    const next =
+      item.confidence > existing.confidence
+        ? {
+            ...item,
+            hiddenAlternatives: Math.max(item.hiddenAlternatives, existing.hiddenAlternatives)
+          }
+        : {
+            ...existing,
+            hiddenAlternatives: Math.max(item.hiddenAlternatives, existing.hiddenAlternatives)
+          };
+
+    byKey.set(key, next);
+  });
+
+  return Array.from(byKey.values());
+};
+
 export const applyDecision = (
   items: FeedItem[],
   itemId: string,
