@@ -197,6 +197,18 @@ def create_app(
             "descriptionSnippet": (volume_info.get("description") or "")[:280],
         }
 
+    def _has_books_api_key(books_client: Any) -> bool:
+        # Custom test doubles may not expose api_key; only enforce for clients that do.
+        if not hasattr(books_client, "api_key"):
+            return True
+        value = getattr(books_client, "api_key")
+        if value is None:
+            return False
+        return bool(str(value).strip())
+
+    def _missing_api_key_message() -> str:
+        return "Google Books API key is not configured. Set GOOGLE_BOOKS_API_KEY in secrets/.env."
+
     @app.get("/books/search")
     def books_search():
         query = (request.args.get("q") or "").strip()
@@ -210,6 +222,8 @@ def create_app(
         max_results = max(1, min(40, max_results))
 
         books_client = get_books_client()
+        if not _has_books_api_key(books_client):
+            return jsonify({"error": "missing_api_key", "message": _missing_api_key_message()}), 503
         payload = books_client.search(query=query, max_results=max_results)
         raw_items = payload.get("items") or []
         return jsonify(
@@ -315,6 +329,7 @@ def create_app(
         detector = get_detector()
         extractor = get_extractor()
         books_client = get_books_client()
+        has_books_api_key = _has_books_api_key(books_client)
 
         started_total = time.perf_counter()
         started_detect = time.perf_counter()
@@ -339,16 +354,19 @@ def create_app(
             author = (extraction.author or "").strip() or None
 
             if title and not title.startswith("["):
-                try:
-                    # Stage 3: lookup best metadata candidates for extracted text.
-                    lookup_payload = books_client.lookup(title=title, author=author)
-                    lookup_total_items = int(lookup_payload.get("totalItems") or 0)
-                    raw_items = lookup_payload.get("items") or []
-                    lookup_items = [
-                        _compact_lookup_item(item) for item in raw_items[:max_lookup_results]
-                    ]
-                except Exception as exc:  # pragma: no cover - network/runtime dependent
-                    lookup_error = f"{type(exc).__name__}: {exc}"
+                if not has_books_api_key:
+                    lookup_error = f"missing_api_key: {_missing_api_key_message()}"
+                else:
+                    try:
+                        # Stage 3: lookup best metadata candidates for extracted text.
+                        lookup_payload = books_client.lookup(title=title, author=author)
+                        lookup_total_items = int(lookup_payload.get("totalItems") or 0)
+                        raw_items = lookup_payload.get("items") or []
+                        lookup_items = [
+                            _compact_lookup_item(item) for item in raw_items[:max_lookup_results]
+                        ]
+                    except Exception as exc:  # pragma: no cover - network/runtime dependent
+                        lookup_error = f"{type(exc).__name__}: {exc}"
 
             x1, y1, x2, y2 = spine.bbox
             spine_results.append(

@@ -72,11 +72,21 @@ class _FakeBooksClient:
         return self._payload()
 
 
-def _build_test_client():
+class _NoKeyBooksClient:
+    api_key = None
+
+    def lookup(self, title: str, author: str | None = None) -> dict:
+        raise AssertionError("lookup should not be called without an API key")
+
+    def search(self, query: str, max_results: int | None = None) -> dict:
+        raise AssertionError("search should not be called without an API key")
+
+
+def _build_test_client(books_client_factory=None):
     holder: dict[str, _FakeBooksClient] = {}
 
-    def _books_factory() -> _FakeBooksClient:
-        client = _FakeBooksClient()
+    def _books_factory():
+        client = _FakeBooksClient() if books_client_factory is None else books_client_factory()
         holder["client"] = client
         return client
 
@@ -122,6 +132,17 @@ def test_books_search_returns_compact_payload():
     assert holder["client"].search_calls == [("dune", 7)]
 
 
+def test_books_search_returns_missing_api_key_when_unset():
+    client, _ = _build_test_client(books_client_factory=lambda: _NoKeyBooksClient())
+
+    response = client.get("/books/search?q=dune&maxResults=7")
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload["error"] == "missing_api_key"
+    assert "GOOGLE_BOOKS_API_KEY" in payload["message"]
+
+
 def test_scan_capture_compact_lookup_item_includes_extended_metadata():
     client, _ = _build_test_client()
     image_file, filename = _build_image_payload()
@@ -150,3 +171,25 @@ def test_scan_capture_compact_lookup_item_includes_extended_metadata():
     assert lookup_item["publisher"] == "Ace"
     assert lookup_item["infoLink"] == "https://books.google.com/dune"
 
+
+def test_scan_capture_returns_missing_api_key_error_when_unset():
+    client, _ = _build_test_client(books_client_factory=lambda: _NoKeyBooksClient())
+    image_file, filename = _build_image_payload()
+
+    response = client.post(
+        "/scan/capture",
+        data={
+            "image": (image_file, filename),
+            "minArea": "100",
+            "maxDetections": "3",
+            "maxLookupResults": "1",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    lookup = payload["spines"][0]["lookup"]
+    assert lookup["totalItems"] == 0
+    assert lookup["items"] == []
+    assert lookup["error"].startswith("missing_api_key:")
