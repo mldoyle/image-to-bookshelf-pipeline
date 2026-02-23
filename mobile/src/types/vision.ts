@@ -16,6 +16,13 @@ export type LookupBookItem = {
   title?: string;
   authors?: string[];
   publishedDate?: string;
+  categories?: string[];
+  averageRating?: number;
+  ratingsCount?: number;
+  imageLinks?: {
+    thumbnail?: string;
+    smallThumbnail?: string;
+  };
   publisher?: string;
   infoLink?: string;
   previewLink?: string;

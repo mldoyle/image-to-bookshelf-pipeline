@@ -29,7 +29,18 @@ class GoogleBooksClient:
         if not query:
             return {"totalItems": 0, "items": []}
 
-        params: dict[str, Any] = {"q": query, "printType": "books", "maxResults": self.max_results}
+        return self.search(query=query, max_results=self.max_results)
+
+    def search(self, query: str, max_results: int | None = None) -> dict[str, Any]:
+        """Fetch raw Google Books response for an arbitrary query string."""
+        query = (query or "").strip()
+        if not query:
+            return {"totalItems": 0, "items": []}
+
+        effective_max_results = self.max_results if max_results is None else max_results
+        effective_max_results = max(1, min(40, int(effective_max_results)))
+
+        params: dict[str, Any] = {"q": query, "printType": "books", "maxResults": effective_max_results}
         if self.api_key:
             params["key"] = self.api_key
 

@@ -1,20 +1,24 @@
-import { useMemo, useState } from "react";
-import {
-  FlatList,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, FlatList, Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { CameraScreen } from "./camera/CameraScreen";
 import { applyDecision, buildFeedItems, summarizeDecisions } from "./capture/CaptureController";
-import type { CaptureScanResponse, FeedItem } from "./types/vision";
+import { LibraryScreen } from "./library/LibraryScreen";
+import { SearchScreen } from "./library/SearchScreen";
+import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
+import {
+  loadLibraryBooks,
+  loadLibraryFilters,
+  loadLibraryViewMode,
+  saveLibraryBooks,
+  saveLibraryFilters,
+  saveLibraryViewMode
+} from "./library/storage";
+import { colors } from "./theme/colors";
+import { DEFAULT_LIBRARY_FILTERS, type LibraryBook, type LibraryFilters, type LibraryViewMode } from "./types/library";
+import type { CaptureScanResponse, FeedItem, LookupBookItem } from "./types/vision";
 
-type AppPhase = "idle" | "camera" | "results";
+type AppPhase = "library" | "camera" | "results" | "search";
 
 const defaultApiBaseUrl = Platform.select({
   android: "http://10.0.2.2:5001",
@@ -26,10 +30,47 @@ const formatSource = (source: FeedItem["source"]): string =>
   source === "lookup" ? "Google Books" : "OCR fallback";
 
 export default function App() {
-  const [phase, setPhase] = useState<AppPhase>("idle");
+  const [phase, setPhase] = useState<AppPhase>("library");
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl ?? "http://127.0.0.1:5001");
   const [captureResult, setCaptureResult] = useState<CaptureScanResponse | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+
+  const [libraryReady, setLibraryReady] = useState(false);
+  const [libraryBooks, setLibraryBooks] = useState<LibraryBook[]>([]);
+  const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>("list");
+  const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLibraryState = async () => {
+      try {
+        const [books, viewMode, filters] = await Promise.all([
+          loadLibraryBooks(),
+          loadLibraryViewMode(),
+          loadLibraryFilters()
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setLibraryBooks(books);
+        setLibraryViewMode(viewMode);
+        setLibraryFilters(filters);
+      } finally {
+        if (!cancelled) {
+          setLibraryReady(true);
+        }
+      }
+    };
+
+    void loadLibraryState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const decisionSummary = useMemo(() => summarizeDecisions(feedItems), [feedItems]);
   const currentItem = useMemo(
@@ -42,13 +83,73 @@ export default function App() {
     [feedItems]
   );
 
+  const updateBooks = useCallback((incoming: LibraryBook[]) => {
+    setLibraryBooks((current) => {
+      const merged = mergeLibraryBooks(current, incoming);
+      void saveLibraryBooks(merged);
+      return merged;
+    });
+  }, []);
+
+  const onToggleLoaned = useCallback((bookId: string) => {
+    setLibraryBooks((current) => {
+      const next = current.map((book) => {
+        if (book.id !== bookId) {
+          return book;
+        }
+        return {
+          ...book,
+          loaned: !book.loaned
+        };
+      });
+      void saveLibraryBooks(next);
+      return next;
+    });
+  }, []);
+
+  const onViewModeChange = useCallback((viewMode: LibraryViewMode) => {
+    setLibraryViewMode(viewMode);
+    void saveLibraryViewMode(viewMode);
+  }, []);
+
+  const onFiltersChange = useCallback((filters: LibraryFilters) => {
+    setLibraryFilters(filters);
+    void saveLibraryFilters(filters);
+  }, []);
+
+  const onScanReviewDone = useCallback(() => {
+    const acceptedBooks = acceptedItems.map((item) => toLibraryBookFromFeedItem(item));
+
+    if (acceptedBooks.length > 0) {
+      setLibraryBooks((current) => {
+        const merged = mergeLibraryBooks(current, acceptedBooks);
+        void saveLibraryBooks(merged);
+        return merged;
+      });
+    }
+
+    setCaptureResult(null);
+    setFeedItems([]);
+    setPhase("library");
+  }, [acceptedItems]);
+
+  if (!libraryReady) {
+    return (
+      <SafeAreaView style={styles.loadingScreen}>
+        <StatusBar style="light" />
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.loadingText}>Loading library...</Text>
+      </SafeAreaView>
+    );
+  }
+
   if (phase === "camera") {
     return (
       <>
         <StatusBar style="dark" />
         <CameraScreen
           apiBaseUrl={apiBaseUrl}
-          onBack={() => setPhase("idle")}
+          onBack={() => setPhase("library")}
           onCaptureComplete={(capture) => {
             setCaptureResult(capture);
             setFeedItems(buildFeedItems(capture));
@@ -59,9 +160,24 @@ export default function App() {
     );
   }
 
+  if (phase === "search") {
+    return (
+      <>
+        <StatusBar style="light" />
+        <SearchScreen
+          apiBaseUrl={apiBaseUrl}
+          onBack={() => setPhase("library")}
+          onAddLookupItem={(item: LookupBookItem) => {
+            updateBooks([toLibraryBookFromLookupItem(item, "search")]);
+          }}
+        />
+      </>
+    );
+  }
+
   if (phase === "results") {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={styles.resultsScreen}>
         <StatusBar style="dark" />
 
         <View style={styles.headerBlock}>
@@ -149,9 +265,7 @@ export default function App() {
           <Pressable
             style={styles.secondaryButton}
             onPress={() => {
-              setCaptureResult(null);
-              setFeedItems([]);
-              setPhase("idle");
+              void onScanReviewDone();
             }}
           >
             <Text style={styles.secondaryButtonLabel}>Done</Text>
@@ -162,47 +276,42 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.startCard}>
-        <Text style={styles.title}>Bookshelf Scanner</Text>
-        <Text style={styles.subtitle}>On-device guide + manual capture + one-card review flow.</Text>
-
-        <Text style={styles.fieldLabel}>Backend base URL</Text>
-        <TextInput
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={apiBaseUrl}
-          onChangeText={setApiBaseUrl}
-          placeholder="http://127.0.0.1:5001"
-        />
-        <Text style={styles.helperText}>
-          Android emulator: use 10.0.2.2. iPhone device: use your Mac LAN IP (for example 192.168.x.x).
-        </Text>
-
-        <Pressable style={styles.primaryButton} onPress={() => setPhase("camera")}>
-          <Text style={styles.primaryButtonLabel}>Open Camera</Text>
-        </Pressable>
-      </View>
-    </SafeAreaView>
+    <>
+      <StatusBar style="light" />
+      <LibraryScreen
+        books={libraryBooks}
+        viewMode={libraryViewMode}
+        filters={libraryFilters}
+        apiBaseUrl={apiBaseUrl}
+        onApiBaseUrlChange={setApiBaseUrl}
+        onViewModeChange={onViewModeChange}
+        onFiltersChange={onFiltersChange}
+        onToggleLoaned={onToggleLoaned}
+        onOpenCamera={() => setPhase("camera")}
+        onOpenSearch={() => setPhase("search")}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12
+  },
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: 14
+  },
+  resultsScreen: {
     flex: 1,
     backgroundColor: "#f1f5f9",
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 16
-  },
-  startCard: {
-    marginTop: 64,
-    backgroundColor: "#ffffff",
-    borderRadius: 18,
-    padding: 18,
-    gap: 10
   },
   headerBlock: {
     backgroundColor: "#ffffff",
@@ -219,37 +328,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: "#334155"
-  },
-  fieldLabel: {
-    marginTop: 10,
-    fontSize: 13,
-    color: "#475569",
-    fontWeight: "700"
-  },
-  input: {
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    paddingHorizontal: 12,
-    backgroundColor: "#ffffff"
-  },
-  helperText: {
-    fontSize: 12,
-    color: "#64748b"
-  },
-  primaryButton: {
-    marginTop: 12,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0f172a"
-  },
-  primaryButtonLabel: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 16
   },
   stackWrap: {
     flex: 1,

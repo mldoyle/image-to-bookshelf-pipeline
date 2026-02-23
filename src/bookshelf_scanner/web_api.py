@@ -184,11 +184,40 @@ def create_app(
             "title": volume_info.get("title"),
             "authors": volume_info.get("authors") or [],
             "publishedDate": volume_info.get("publishedDate"),
+            "categories": volume_info.get("categories") or [],
+            "averageRating": volume_info.get("averageRating"),
+            "ratingsCount": volume_info.get("ratingsCount"),
+            "imageLinks": {
+                "thumbnail": (volume_info.get("imageLinks") or {}).get("thumbnail"),
+                "smallThumbnail": (volume_info.get("imageLinks") or {}).get("smallThumbnail"),
+            },
             "publisher": volume_info.get("publisher"),
             "infoLink": volume_info.get("infoLink"),
             "previewLink": volume_info.get("previewLink"),
             "descriptionSnippet": (volume_info.get("description") or "")[:280],
         }
+
+    @app.get("/books/search")
+    def books_search():
+        query = (request.args.get("q") or "").strip()
+        if not query:
+            return jsonify({"error": "missing_query"}), 400
+
+        try:
+            max_results = int(request.args.get("maxResults", "20"))
+        except ValueError:
+            return jsonify({"error": "invalid_max_results"}), 400
+        max_results = max(1, min(40, max_results))
+
+        books_client = get_books_client()
+        payload = books_client.search(query=query, max_results=max_results)
+        raw_items = payload.get("items") or []
+        return jsonify(
+            {
+                "totalItems": int(payload.get("totalItems") or 0),
+                "items": [_compact_lookup_item(item) for item in raw_items],
+            }
+        )
 
     @app.post("/detect/spines")
     def detect_spines():
