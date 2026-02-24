@@ -67,6 +67,19 @@ const BOTTOM_GRADIENT_STEPS = [
   "rgba(255, 255, 255, 0.20)"
 ] as const;
 
+function AppBackground() {
+  return (
+    <View pointerEvents="none" style={styles.appBackground}>
+      <View style={styles.appBackgroundBase} />
+      <View style={styles.bottomGradient}>
+        {BOTTOM_GRADIENT_STEPS.map((color, index) => (
+          <View key={`${color}-${index}`} style={[styles.bottomGradientStep, { backgroundColor: color }]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const defaultApiBaseUrl = Platform.select({
   android: "http://10.0.2.2:5001",
   ios: "http://127.0.0.1:5001",
@@ -513,17 +526,21 @@ export default function App() {
 
   if (!libraryReady) {
     return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <StatusBar style="light" />
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.loadingText}>Loading library...</Text>
-      </SafeAreaView>
+      <View style={styles.appShell}>
+        <AppBackground />
+        <SafeAreaView style={styles.loadingScreen}>
+          <StatusBar style="light" />
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.loadingText}>Loading library...</Text>
+        </SafeAreaView>
+      </View>
     );
   }
 
   if (phase === "camera") {
     return (
-      <>
+      <View style={styles.appShell}>
+        <AppBackground />
         <StatusBar style="light" />
         <CameraScreen
           apiBaseUrl={apiBaseUrl}
@@ -547,13 +564,14 @@ export default function App() {
             setCaptureSessionSpineCount((count) => count + capture.spines.length);
           }}
         />
-      </>
+      </View>
     );
   }
 
   if (phase === "search") {
     return (
-      <>
+      <View style={styles.appShell}>
+        <AppBackground />
         <StatusBar style="light" />
         <SearchScreen
           apiBaseUrl={apiBaseUrl}
@@ -562,13 +580,14 @@ export default function App() {
             updateBooks([toLibraryBookFromLookupItem(item, "search")]);
           }}
         />
-      </>
+      </View>
     );
   }
 
   if (phase === "book_profile" && selectedBook) {
     return (
-      <>
+      <View style={styles.appShell}>
+        <AppBackground />
         <StatusBar style="light" />
         <BookProfileScreen
           book={selectedBook}
@@ -576,12 +595,13 @@ export default function App() {
             setPhase("library");
           }}
         />
-      </>
+      </View>
     );
   }
 
   return (
-    <>
+    <View style={styles.appShell}>
+      <AppBackground />
       <StatusBar style="light" />
       <LibraryScreen
         books={libraryBooks}
@@ -654,11 +674,21 @@ export default function App() {
           </SafeAreaView>
         </View>
       ) : null}
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  appShell: {
+    flex: 1
+  },
+  appBackground: {
+    ...StyleSheet.absoluteFillObject
+  },
+  appBackgroundBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: OVERLAY_BASE
+  },
   loadingScreen: {
     flex: 1,
     backgroundColor: colors.background,
