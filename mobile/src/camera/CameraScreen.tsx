@@ -378,7 +378,19 @@ export function CameraScreen({
     outputRange: ["0deg", "-90deg"]
   });
 
-  const triggerCaptureFeedback = useCallback(
+  const triggerCaptureFlash = useCallback(() => {
+    flashAnim.stopAnimation();
+    flashAnim.setValue(0.35);
+
+    Animated.timing(flashAnim, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true
+    }).start();
+  }, [flashAnim]);
+
+  const triggerCaptureFlyout = useCallback(
     (photoUri: string) => {
       const destination = reviewButtonLayoutRef.current
         ? {
@@ -398,27 +410,18 @@ export function CameraScreen({
       setFlyThumbnailUri(photoUri);
       setFlyStart(origin);
       setFlyEnd(destination);
-      flashAnim.setValue(0.35);
       flyAnim.setValue(0);
 
-      Animated.parallel([
-        Animated.timing(flashAnim, {
-          toValue: 0,
-          duration: 240,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true
-        }),
-        Animated.timing(flyAnim, {
-          toValue: 1,
-          duration: 520,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true
-        })
-      ]).start(() => {
+      Animated.timing(flyAnim, {
+        toValue: 1,
+        duration: 520,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      }).start(() => {
         setFlyThumbnailUri(null);
       });
     },
-    [flashAnim, flyAnim, windowHeight, windowWidth]
+    [flyAnim, windowHeight, windowWidth]
   );
 
   const onCapturePress = useCallback(async () => {
@@ -429,6 +432,7 @@ export function CameraScreen({
 
     setCaptureError(null);
     setCaptureBusy(true);
+    triggerCaptureFlash();
 
     try {
       const capture = await camera.takePictureAsync({
@@ -441,7 +445,7 @@ export function CameraScreen({
         throw new Error("capture_uri_missing");
       }
 
-      triggerCaptureFeedback(capture.uri);
+      triggerCaptureFlyout(capture.uri);
       enqueueLookup(capture.uri);
 
       setCaptureCooldown(true);
@@ -457,7 +461,7 @@ export function CameraScreen({
     } finally {
       setCaptureBusy(false);
     }
-  }, [captureEnabled, enqueueLookup, triggerCaptureFeedback]);
+  }, [captureEnabled, enqueueLookup, triggerCaptureFlash, triggerCaptureFlyout]);
 
   if (!permission) {
     return (
