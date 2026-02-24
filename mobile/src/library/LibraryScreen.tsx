@@ -1,271 +1,186 @@
-import { useMemo } from "react";
-import {
-  FlatList,
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native";
-import { FilterBar } from "./components/FilterBar";
-import { LibraryListItem } from "./components/LibraryListItem";
+import { useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { AppText, Surface } from "../primitives";
 import { LibraryGridItem } from "./components/LibraryGridItem";
-import { FabMenu } from "./components/FabMenu";
-import { deriveLibraryFilterOptions, hasActiveFilters, selectVisibleLibraryBooks } from "./selectors";
+import { LibraryListItem } from "./components/LibraryListItem";
+import { selectVisibleLibraryBooks } from "./selectors";
 import { colors } from "../theme/colors";
-import { radius, spacing, typography } from "../theme/tokens";
-import {
-  DEFAULT_LIBRARY_FILTERS,
-  type LibraryBook,
-  type LibraryFilters,
-  type LibraryViewMode
-} from "../types/library";
+import { radius, spacing } from "../theme/tokens";
+import type { LibraryBook, LibraryFilters, LibraryViewMode } from "../types/library";
+
+type LibraryCategory = "read" | "reviews";
 
 type LibraryScreenProps = {
   books: LibraryBook[];
   viewMode: LibraryViewMode;
   filters: LibraryFilters;
-  apiBaseUrl: string;
-  onApiBaseUrlChange: (value: string) => void;
   onViewModeChange: (mode: LibraryViewMode) => void;
-  onFiltersChange: (filters: LibraryFilters) => void;
   onToggleLoaned: (bookId: string) => void;
   onOpenBook: (book: LibraryBook) => void;
-  onOpenCamera: () => void;
-  onOpenSearch: () => void;
 };
 
-const listBottomPadding = 120;
-
-export function LibraryScreen({
-  books,
-  viewMode,
-  filters,
-  apiBaseUrl,
-  onApiBaseUrlChange,
-  onViewModeChange,
-  onFiltersChange,
-  onToggleLoaned,
-  onOpenBook,
-  onOpenCamera,
-  onOpenSearch
-}: LibraryScreenProps) {
+export function LibraryScreen({ books, viewMode, filters, onViewModeChange, onToggleLoaned, onOpenBook }: LibraryScreenProps) {
+  const [category, setCategory] = useState<LibraryCategory>("read");
   const visibleBooks = useMemo(() => selectVisibleLibraryBooks(books, filters), [books, filters]);
-  const filterOptions = useMemo(() => deriveLibraryFilterOptions(books), [books]);
-  const hasFilters = hasActiveFilters(filters);
-  const isLoopbackApi =
-    apiBaseUrl.includes("127.0.0.1") || apiBaseUrl.includes("localhost");
+  const loanedCount = useMemo(() => books.filter((book) => book.loaned).length, [books]);
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <View style={styles.screen}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Library</Text>
-          <Text style={styles.subtitle}>Recently Added</Text>
-        </View>
-        <View style={styles.viewToggle}>
-          <Pressable
-            style={[styles.toggleButton, viewMode === "list" && styles.toggleButtonActive]}
-            onPress={() => onViewModeChange("list")}
-          >
-            <Text style={styles.toggleLabel}>List</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.toggleButton, viewMode === "grid" && styles.toggleButtonActive]}
-            onPress={() => onViewModeChange("grid")}
-          >
-            <Text style={styles.toggleLabel}>Grid</Text>
-          </Pressable>
-        </View>
+        <AppText variant="label" tone="muted">
+          Library
+        </AppText>
+        <AppText variant="bodySm" tone="muted">
+          {books.length} books · {loanedCount} currently lent out
+        </AppText>
       </View>
 
-      <View style={styles.apiWrap}>
-        <Text style={styles.apiLabel}>API</Text>
-        <View style={styles.apiColumn}>
-          <TextInput
-            style={styles.apiInput}
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={apiBaseUrl}
-            onChangeText={onApiBaseUrlChange}
-            placeholder="http://127.0.0.1:5001"
-            placeholderTextColor={colors.textMuted}
-          />
-          {isLoopbackApi ? (
-            <Text style={styles.apiHint}>
-              iPhone on Wi-Fi: use your Mac LAN IP (for example `http://192.168.x.x:5001`).
-            </Text>
-          ) : null}
+      <Surface variant="card" style={styles.panel}>
+        <View style={styles.panelTopRow}>
+          <View style={styles.categoryRow}>
+            <CategoryButton label="READ" active={category === "read"} onPress={() => setCategory("read")} />
+            <CategoryButton
+              label="REVIEWS"
+              active={category === "reviews"}
+              onPress={() => setCategory("reviews")}
+            />
+          </View>
+
+          <View style={styles.viewToggle}>
+            <Pressable
+              style={[styles.viewButton, viewMode === "grid" && styles.viewButtonActive]}
+              onPress={() => onViewModeChange("grid")}
+            >
+              <AppText variant="caption" tone={viewMode === "grid" ? "inverse" : "muted"}>
+                ▦
+              </AppText>
+            </Pressable>
+            <Pressable
+              style={[styles.viewButton, viewMode === "list" && styles.viewButtonActive]}
+              onPress={() => onViewModeChange("list")}
+            >
+              <AppText variant="caption" tone={viewMode === "list" ? "inverse" : "muted"}>
+                ≣
+              </AppText>
+            </Pressable>
+          </View>
         </View>
-      </View>
 
-      <FilterBar
-        filters={filters}
-        options={filterOptions}
-        onFiltersChange={onFiltersChange}
-        onClearFilters={() => onFiltersChange(DEFAULT_LIBRARY_FILTERS)}
-      />
-
-      <View style={styles.content}>
-        {books.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No books yet</Text>
-            <Text style={styles.emptyBody}>Use the + button to scan a shelf or add books from search.</Text>
+        {category !== "read" ? (
+          <View style={styles.placeholderWrap}>
+            <AppText variant="h3">Reviews</AppText>
+            <AppText variant="bodySm" tone="muted">
+              This view is ready for your next data integration pass.
+            </AppText>
           </View>
-        ) : visibleBooks.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No results for current filters</Text>
-            <Text style={styles.emptyBody}>Clear or adjust filters to show your library.</Text>
-            {hasFilters ? (
-              <Pressable style={styles.emptyAction} onPress={() => onFiltersChange(DEFAULT_LIBRARY_FILTERS)}>
-                <Text style={styles.emptyActionText}>Reset Filters</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ) : viewMode === "list" ? (
-          <FlatList
-            data={visibleBooks}
-            key="list"
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
+        ) : viewMode === "grid" ? (
+          <ScrollView contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false}>
+            {visibleBooks.map((book) => (
+              <LibraryGridItem key={book.id} book={book} onOpenBook={onOpenBook} />
+            ))}
+          </ScrollView>
+        ) : (
+          <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+            {visibleBooks.map((book) => (
               <LibraryListItem
-                book={item}
+                key={book.id}
+                book={book}
+                onOpenBook={onOpenBook}
                 onToggleLoaned={onToggleLoaned}
               />
-            )}
-          />
-        ) : (
-          <FlatList
-            data={visibleBooks}
-            key="grid"
-            keyExtractor={(item) => item.id}
-            numColumns={4}
-            columnWrapperStyle={styles.gridRow}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <LibraryGridItem
-                book={item}
-                onOpenBook={onOpenBook}
-              />
-            )}
-          />
+            ))}
+          </ScrollView>
         )}
-      </View>
+      </Surface>
+    </View>
+  );
+}
 
-      <FabMenu onCameraPress={onOpenCamera} onSearchPress={onOpenSearch} />
-    </SafeAreaView>
+type CategoryButtonProps = {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+};
+
+function CategoryButton({ label, active, onPress }: CategoryButtonProps) {
+  return (
+    <Pressable style={[styles.categoryButton, active && styles.categoryButtonActive]} onPress={onPress}>
+      <AppText variant="label" tone={active ? "accent" : "muted"}>
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md
+    gap: spacing.sm
   },
   header: {
+    gap: spacing.xs
+  },
+  panel: {
+    flex: 1,
+    borderColor: "rgba(212,165,116,0.07)",
+    overflow: "hidden"
+  },
+  panelTopRow: {
+    height: 59,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(212,165,116,0.07)",
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: spacing.sm
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.sm
   },
-  title: {
-    color: colors.textPrimary,
-    fontSize: typography.title,
-    fontWeight: "900"
+  categoryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md
   },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: typography.body
+  categoryButton: {
+    minHeight: 24,
+    justifyContent: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "transparent"
+  },
+  categoryButtonActive: {
+    borderBottomColor: colors.accent
   },
   viewToggle: {
     flexDirection: "row",
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden"
-  },
-  toggleButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.white
-  },
-  toggleButtonActive: {
-    backgroundColor: colors.white
-  },
-  toggleLabel: {
-    color: colors.background,
-    fontWeight: "700"
-  },
-  apiWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.xs
-  },
-  apiLabel: {
-    color: colors.textMuted,
-    fontSize: typography.caption,
-    width: 28
-  },
-  apiInput: {
-    height: 38,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    color: colors.textPrimary,
-    paddingHorizontal: spacing.md
-  },
-  apiColumn: {
-    flex: 1,
     gap: 4
   },
-  apiHint: {
-    color: colors.warning,
-    fontSize: typography.caption
-  },
-  content: {
-    flex: 1
-  },
-  listContent: {
-    gap: spacing.sm,
-    paddingBottom: listBottomPadding
-  },
-  gridRow: {
-    gap: spacing.xs
-  },
-  emptyState: {
-    marginTop: spacing.xxl,
-    borderRadius: radius.lg,
+  viewButton: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: "rgba(212,165,116,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceElevated
+  },
+  viewButtonActive: {
+    borderColor: colors.accent,
+    backgroundColor: "rgba(212,165,116,0.1)"
+  },
+  placeholderWrap: {
     padding: spacing.lg,
     gap: spacing.sm
   },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: typography.h2,
-    fontWeight: "800"
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 6,
+    columnGap: 6,
+    justifyContent: "flex-start",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingBottom: spacing.xxl
   },
-  emptyBody: {
-    color: colors.textSecondary,
-    fontSize: typography.body
-  },
-  emptyAction: {
-    marginTop: spacing.sm,
-    alignSelf: "flex-start",
-    borderRadius: radius.md,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
-  },
-  emptyActionText: {
-    color: colors.background,
-    fontWeight: "800"
+  list: {
+    paddingBottom: spacing.xxl
   }
 });

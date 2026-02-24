@@ -19,9 +19,13 @@ import {
 import BackIcon from "./icons/BackIcon";
 import { CameraScreen } from "./camera/CameraScreen";
 import { BookProfileScreen } from "./library/BookProfileScreen";
+import { HomeScreen } from "./library/HomeScreen";
 import { LibraryScreen } from "./library/LibraryScreen";
+import { LoansScreen } from "./library/LoansScreen";
+import { ProfileScreen } from "./library/ProfileScreen";
 import { SearchScreen } from "./library/SearchScreen";
 import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
+import { MobileScaffold, type MainTabKey } from "./primitives";
 import {
   loadLibraryBooks,
   loadLibraryFilters,
@@ -290,6 +294,7 @@ export default function App() {
   }, [metroHost]);
 
   const [phase, setPhase] = useState<AppPhase>("library");
+  const [activeTab, setActiveTab] = useState<MainTabKey>("library");
   const [apiBaseUrl, setApiBaseUrl] = useState(resolvedDefaultApiBaseUrl);
   const [reviewCaptures, setReviewCaptures] = useState<ReviewCaptureState[]>([]);
 
@@ -625,6 +630,7 @@ export default function App() {
             setPhase("library");
           }}
           onOpenReview={() => {
+            setActiveTab("library");
             setPhase("results");
           }}
           onCaptureProcessed={(capture: CaptureScanResponse) => {
@@ -675,22 +681,60 @@ export default function App() {
   return (
     <>
       <StatusBar style="light" />
-      <LibraryScreen
-        books={libraryBooks}
-        viewMode={libraryViewMode}
-        filters={libraryFilters}
-        apiBaseUrl={apiBaseUrl}
-        onApiBaseUrlChange={setApiBaseUrl}
-        onViewModeChange={onViewModeChange}
-        onFiltersChange={onFiltersChange}
-        onToggleLoaned={onToggleLoaned}
-        onOpenBook={(book) => {
-          setSelectedBook(book);
-          setPhase("book_profile");
-        }}
-        onOpenCamera={startCameraSession}
-        onOpenSearch={() => setPhase("search")}
-      />
+      <View style={styles.mainSafeArea}>
+        <MobileScaffold
+          activeTab={activeTab}
+          onTabPress={setActiveTab}
+          onSearchPress={() => setPhase("search")}
+          onCameraPress={startCameraSession}
+          onBellPress={() => {}}
+          onAvatarPress={() => setActiveTab("profile")}
+        >
+          {activeTab === "home" ? (
+            <HomeScreen
+              books={libraryBooks}
+              onOpenBook={(book) => {
+                setSelectedBook(book);
+                setPhase("book_profile");
+              }}
+              onViewLibrary={() => setActiveTab("library")}
+            />
+          ) : null}
+
+          {activeTab === "library" ? (
+            <LibraryScreen
+              books={libraryBooks}
+              viewMode={libraryViewMode}
+              filters={libraryFilters}
+              onViewModeChange={onViewModeChange}
+              onToggleLoaned={onToggleLoaned}
+              onOpenBook={(book) => {
+                setSelectedBook(book);
+                setPhase("book_profile");
+              }}
+            />
+          ) : null}
+
+          {activeTab === "loans" ? (
+            <LoansScreen
+              books={libraryBooks}
+              onToggleLoaned={onToggleLoaned}
+              onOpenBook={(book) => {
+                setSelectedBook(book);
+                setPhase("book_profile");
+              }}
+            />
+          ) : null}
+
+          {activeTab === "profile" ? (
+            <ProfileScreen
+              books={libraryBooks}
+              apiBaseUrl={apiBaseUrl}
+              onApiBaseUrlChange={setApiBaseUrl}
+            />
+          ) : null}
+        </MobileScaffold>
+      </View>
 
       {phase === "results" ? (
         <View style={styles.overlayScrim}>
@@ -751,6 +795,10 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  mainSafeArea: {
+    flex: 1,
+    backgroundColor: colors.background
+  },
   loadingScreen: {
     flex: 1,
     backgroundColor: colors.background,

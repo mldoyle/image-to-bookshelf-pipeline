@@ -14,16 +14,14 @@ import {
 import { CameraView, type CameraOrientation, useCameraPermissions } from "expo-camera";
 import { runCaptureLookup } from "../api/extractionClient";
 import BackIcon from "../icons/BackIcon";
+import FlashToggleIcon from "../icons/FlashToggleIcon";
 import OrientationNoHintIcon from "../icons/OrientationNoHintIcon";
 import RotatePortraitIcon from "../icons/RotatePortraitIcon";
 import SelectCapturesIcon from "../icons/SelectCapturesIcon";
 import SelectNoCapturesIcon from "../icons/SelectNoCapturesIcon";
-import ZoomInHintIcon from "../icons/ZoomInHintIcon";
-import ZoomOutHintIcon from "../icons/ZoomOutHintIcon";
 import { GuideOverlay } from "../overlay/GuideOverlay";
 import { colors } from "../theme/colors";
 import type { CaptureScanResponse } from "../types/vision";
-import { estimateGuideBoxFromJpegBase64, type GuideBox } from "./localGuideDetector";
 
 type CameraScreenProps = {
   apiBaseUrl: string;
@@ -47,15 +45,11 @@ type Point = {
   y: number;
 };
 
-type GuideHint = "zoom_in" | "zoom_out" | "steady";
-
-const GUIDE_ANALYSIS_INTERVAL_MS = 900;
 const CAPTURE_LOOKUP_MAX_RESULTS = 3;
-const CAPTURE_DELAY_MS = 650;
+const CAPTURE_DELAY_MS = 300;
+const CAPTURE_FLASH_ARM_DELAY_MS = 80;
 const LANDSCAPE_HINT_FADE_DELAY_MS = 2000;
 const LANDSCAPE_HINT_FADE_DURATION_MS = 280;
-const GUIDE_AREA_RATIO_MIN = 0.28;
-const GUIDE_AREA_RATIO_MAX = 0.72;
 const TOP_BAR_INSET = 14;
 const TOP_BAR_OFFSET = 52;
 
@@ -73,9 +67,6 @@ export function CameraScreen({
   onCaptureProcessed
 }: CameraScreenProps) {
   const cameraRef = useRef<CameraView | null>(null);
-  const guideIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const guideAnalysisInFlightRef = useRef(false);
-  const guideAnalysisTokenRef = useRef(0);
   const lookupQueueRef = useRef<QueueItem[]>([]);
   const lookupWorkerInFlightRef = useRef(false);
   const cooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,12 +86,11 @@ export function CameraScreen({
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureCooldown, setCaptureCooldown] = useState(false);
-  const [detectedBox, setDetectedBox] = useState<GuideBox | null>(null);
-  const [detectionFrameWidth, setDetectionFrameWidth] = useState(0);
-  const [detectionFrameHeight, setDetectionFrameHeight] = useState(0);
   const [lookupInFlightCount, setLookupInFlightCount] = useState(0);
   const [queuedLookupCount, setQueuedLookupCount] = useState(0);
   const [showLandscapeNoArrowHint, setShowLandscapeNoArrowHint] = useState(false);
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const [captureFlashActive, setCaptureFlashActive] = useState(false);
 
   const [flyThumbnailUri, setFlyThumbnailUri] = useState<string | null>(null);
   const [flyStart, setFlyStart] = useState<Point>({ x: 0, y: 0 });
@@ -134,22 +124,14 @@ export function CameraScreen({
     return "90deg";
   }, [cameraOrientation]);
 
-  const stopGuideLoop = useCallback(() => {
-    if (guideIntervalRef.current !== null) {
-      clearInterval(guideIntervalRef.current);
-      guideIntervalRef.current = null;
-    }
-  }, []);
-
   useEffect(() => {
     return () => {
-      stopGuideLoop();
       if (cooldownTimeoutRef.current !== null) {
         clearTimeout(cooldownTimeoutRef.current);
         cooldownTimeoutRef.current = null;
       }
     };
-  }, [stopGuideLoop]);
+  }, []);
 
   useEffect(() => {
     if (!permission || permission.granted || !permission.canAskAgain) {
@@ -220,73 +202,6 @@ export function CameraScreen({
     };
   }, [landscapeHintOpacity, phoneIsLandscape]);
 
-  useEffect(() => {
-    guideAnalysisTokenRef.current += 1;
-    setDetectedBox(null);
-    setDetectionFrameWidth(0);
-    setDetectionFrameHeight(0);
-  }, [phoneIsLandscape]);
-
-  const runGuideAnalysis = useCallback(async () => {
-    if (guideAnalysisInFlightRef.current || captureBusy || !cameraReady) {
-      return;
-    }
-
-    const camera = cameraRef.current;
-    if (!camera) {
-      return;
-    }
-
-    guideAnalysisInFlightRef.current = true;
-    const analysisToken = guideAnalysisTokenRef.current;
-
-    try {
-      const frame = await camera.takePictureAsync({
-        quality: 0.2,
-        skipProcessing: true,
-        base64: true,
-        shutterSound: false,
-        exif: false
-      });
-
-      if (!frame?.base64) {
-        return;
-      }
-
-      const estimate = estimateGuideBoxFromJpegBase64(frame.base64);
-      if (!estimate) {
-        return;
-      }
-
-      if (analysisToken !== guideAnalysisTokenRef.current) {
-        return;
-      }
-
-      setDetectionFrameWidth(estimate.frameWidth);
-      setDetectionFrameHeight(estimate.frameHeight);
-      setDetectedBox(estimate.box);
-    } finally {
-      guideAnalysisInFlightRef.current = false;
-    }
-  }, [cameraReady, captureBusy]);
-
-  useEffect(() => {
-    if (!cameraReady || !permission?.granted || captureBusy) {
-      stopGuideLoop();
-      return;
-    }
-
-    stopGuideLoop();
-    void runGuideAnalysis();
-    guideIntervalRef.current = setInterval(() => {
-      void runGuideAnalysis();
-    }, GUIDE_ANALYSIS_INTERVAL_MS);
-
-    return () => {
-      stopGuideLoop();
-    };
-  }, [cameraReady, captureBusy, permission?.granted, phoneIsLandscape, runGuideAnalysis, stopGuideLoop]);
-
   const processLookupQueue = useCallback(async () => {
     if (lookupWorkerInFlightRef.current) {
       return;
@@ -352,26 +267,7 @@ export function CameraScreen({
     () => cameraReady && !captureBusy && !captureCooldown,
     [cameraReady, captureBusy, captureCooldown]
   );
-
-  const guideAreaRatio = useMemo(() => {
-    if (!detectedBox || detectionFrameWidth <= 0 || detectionFrameHeight <= 0) {
-      return 0;
-    }
-    return (detectedBox.w * detectedBox.h) / (detectionFrameWidth * detectionFrameHeight);
-  }, [detectedBox, detectionFrameHeight, detectionFrameWidth]);
-
-  const guideHint = useMemo<GuideHint>(() => {
-    if (!detectedBox || guideAreaRatio <= 0) {
-      return "steady";
-    }
-    if (guideAreaRatio < GUIDE_AREA_RATIO_MIN) {
-      return "zoom_in";
-    }
-    if (guideAreaRatio > GUIDE_AREA_RATIO_MAX) {
-      return "zoom_out";
-    }
-    return "steady";
-  }, [detectedBox, guideAreaRatio]);
+  const cameraFlashMode = flashEnabled && captureFlashActive ? "on" : "off";
 
   const rotateInterpolation = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -423,7 +319,7 @@ export function CameraScreen({
 
   const onCapturePress = useCallback(async () => {
     const camera = cameraRef.current;
-    if (!captureEnabled || !camera || guideAnalysisInFlightRef.current) {
+    if (!captureEnabled || !camera) {
       return;
     }
 
@@ -431,6 +327,13 @@ export function CameraScreen({
     setCaptureBusy(true);
 
     try {
+      if (flashEnabled) {
+        setCaptureFlashActive(true);
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, CAPTURE_FLASH_ARM_DELAY_MS);
+        });
+      }
+
       const capture = await camera.takePictureAsync({
         quality: 0.9,
         skipProcessing: false,
@@ -455,9 +358,14 @@ export function CameraScreen({
       const message = error instanceof Error ? error.message : "capture_failed";
       setCaptureError(message);
     } finally {
+      setCaptureFlashActive(false);
       setCaptureBusy(false);
     }
-  }, [captureEnabled, enqueueLookup, triggerCaptureFeedback]);
+  }, [captureEnabled, enqueueLookup, flashEnabled, triggerCaptureFeedback]);
+
+  const onFlashToggle = useCallback(() => {
+    setFlashEnabled((enabled) => !enabled);
+  }, []);
 
   if (!permission) {
     return (
@@ -475,10 +383,13 @@ export function CameraScreen({
         <Text style={styles.helperText}>
           This app needs camera access to scan bookshelf photos.
         </Text>
-        <Pressable style={styles.primaryButton} onPress={() => void requestPermission()}>
+        <Pressable
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.permissionButtonPressed]}
+          onPress={() => void requestPermission()}
+        >
           <Text style={styles.primaryButtonLabel}>Allow Camera</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={onBack}>
+        <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.permissionButtonPressed]} onPress={onBack}>
           <Text style={styles.secondaryButtonLabel}>Back</Text>
         </Pressable>
       </View>
@@ -515,6 +426,7 @@ export function CameraScreen({
         }}
         style={styles.camera}
         facing="back"
+        flash={cameraFlashMode}
         responsiveOrientationWhenOrientationLocked
         onResponsiveOrientationChanged={(event) => {
           setCameraOrientation(event.orientation);
@@ -545,15 +457,43 @@ export function CameraScreen({
         </Animated.View>
       ) : null}
 
-      <Pressable style={[styles.topIconButton, styles.backButton]} onPress={onBack}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.topIconButton,
+          styles.backButton,
+          pressed && styles.topIconButtonPressed
+        ]}
+        onPress={onBack}
+        hitSlop={8}
+      >
         <BackIcon color={colors.background} />
       </Pressable>
 
       <Pressable
-        style={[styles.reviewButton, styles.reviewButtonAbsolute, !reviewEnabled && styles.reviewButtonDisabled]}
+        style={({ pressed }) => [
+          styles.flashToggle,
+          flashEnabled && styles.flashToggleActive,
+          pressed && styles.topIconButtonPressed
+        ]}
+        onPress={onFlashToggle}
+        accessibilityRole="button"
+        accessibilityLabel={flashEnabled ? "Turn flash off" : "Turn flash on"}
+        hitSlop={8}
+      >
+        <FlashToggleIcon enabled={flashEnabled} color={flashEnabled ? colors.white : colors.background} />
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [
+          styles.reviewButton,
+          styles.reviewButtonAbsolute,
+          !reviewEnabled && styles.reviewButtonDisabled,
+          pressed && reviewEnabled && styles.topIconButtonPressed
+        ]}
         onPress={onOpenReview}
         disabled={!reviewEnabled}
         onLayout={onReviewButtonLayout}
+        hitSlop={8}
       >
         {reviewEnabled ? <SelectCapturesIcon /> : <SelectNoCapturesIcon />}
         {queueBusy ? <ActivityIndicator size="small" color={colors.textPrimary} style={styles.queueSpinner} /> : null}
@@ -617,6 +557,25 @@ const styles = StyleSheet.create({
     top: TOP_BAR_OFFSET,
     left: TOP_BAR_INSET
   },
+  flashToggle: {
+    position: "absolute",
+    top: TOP_BAR_OFFSET,
+    left: "50%",
+    transform: [{ translateX: -22 }],
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.14)",
+    paddingHorizontal: 10
+  },
+  flashToggleActive: {
+    backgroundColor: colors.warning,
+    borderColor: "transparent"
+  },
   reviewButton: {
     minWidth: 44,
     minHeight: 44,
@@ -635,7 +594,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 22,
-    backgroundColor: colors.white
+    backgroundColor: colors.white,
+    transform: [{ scale: 1 }]
+  },
+  topIconButtonPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.94 }]
   },
   reviewButtonDisabled: {
     opacity: 0.55
@@ -736,6 +700,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 18,
     paddingVertical: 12
+  },
+  permissionButtonPressed: {
+    opacity: 0.8
   },
   primaryButtonLabel: {
     color: colors.background,
