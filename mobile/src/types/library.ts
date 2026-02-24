@@ -13,6 +13,7 @@ export type LibraryBook = {
   publishedYear: number | null;
   genres: string[];
   rating: number | null;
+  review?: string | null;
   coverThumbnail: string | null;
   loaned: boolean;
   addedAt: string;
@@ -39,4 +40,3 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   includeUnrated: false,
   loaned: "all"
 };
-

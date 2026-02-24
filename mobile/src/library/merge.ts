@@ -65,6 +65,7 @@ export const toLibraryBookFromLookupItem = (
   publishedYear: parsePublishedYear(lookupItem.publishedDate),
   genres: sanitizeGenres(lookupItem.categories),
   rating: asNumberOrNull(lookupItem.averageRating),
+  review: null,
   coverThumbnail: lookupItem.imageLinks?.thumbnail || lookupItem.imageLinks?.smallThumbnail || null,
   loaned: false,
   addedAt: new Date().toISOString(),
@@ -88,6 +89,7 @@ export const toLibraryBookFromFeedItem = (item: FeedItem): LibraryBook => {
     publishedYear: null,
     genres: [],
     rating: null,
+    review: null,
     coverThumbnail: null,
     loaned: false,
     addedAt: new Date().toISOString(),
@@ -116,12 +118,15 @@ const choosePreferredBook = (existing: LibraryBook, incoming: LibraryBook): Libr
   const preferred = incomingScore > existingScore ? incoming : existing;
   const preservedAddedAt = new Date(existing.addedAt) <= new Date(incoming.addedAt) ? existing.addedAt : incoming.addedAt;
   const preservedLoaned = existing.loaned || incoming.loaned;
+  const shouldAdoptIncomingId =
+    existing.id.startsWith("book-") && !incoming.id.startsWith("book-");
 
   return {
     ...preferred,
-    id: existing.id,
+    id: shouldAdoptIncomingId ? incoming.id : existing.id,
     addedAt: preservedAddedAt,
-    loaned: preservedLoaned
+    loaned: preservedLoaned,
+    review: preferred.review ?? existing.review ?? null
   };
 };
 
@@ -149,4 +154,3 @@ export const mergeLibraryBooks = (
     (left, right) => new Date(right.addedAt).getTime() - new Date(left.addedAt).getTime()
   );
 };
-

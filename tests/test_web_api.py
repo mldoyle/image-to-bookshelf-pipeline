@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import pytest
 from PIL import Image
+
+pytest.importorskip("flask_sqlalchemy")
 
 from bookshelf_scanner.web_api import create_app
 

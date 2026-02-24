@@ -1,177 +1,142 @@
 # Bookshelf Scanner
 
-Scan photos of your bookshelf and export to Goodreads or StoryGraph.
+Scan bookshelf images, extract titles/authors, enrich with Google Books metadata, and manage a local library through a Flask API plus mobile/web clients.
 
 ## Features
 
-- **Automatic spine detection** using YOLO object detection
-- **Text extraction** using Moondream 0.5B vision-language model
-- **Metadata lookup** via Google Books API
-- **Webcam harness** for live detection/readiness tuning and manual capture+lookup
-- **Goodreads-compatible CSV export** for easy import
+- YOLO-based book spine detection.
+- Moondream-based title/author extraction.
+- Google Books lookup and compact result shaping.
+- Flask API for `/detect/spines`, `/scan/capture`, and `/library/me/*`.
+- React Native mobile app and Vite web harness for capture/review workflows.
+- SQLite-by-default local persistence (`data/dev.db`), with `DATABASE_URL` override support.
 
-## Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/bookshelf-scanner
-cd bookshelf-scanner
-
-# Install dependencies
-pip install -e .
-
-# Or with GPU support
-pip install -e ".[gpu]"
-```
-
-## Quick Start
+## Setup
 
 ```bash
-# Extract title/author from a single spine image
-python -m bookshelf_scanner.extractor data/spine.jpg
-
-# Process a directory of spine crops and write CSV output
-python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --output outputs/extractions/my_shelf.csv
-
-# Run in offline mode using only locally cached model files
-python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --local-files-only
-
-# Look up extracted titles/authors in Google Books and write full API data to CSV
-python -m bookshelf_scanner.lookup outputs/extractions/test.csv --output lookup_outputs.csv
-
-# Run local Flask API for live webcam spine detection
-python -m bookshelf_scanner.web_api --host 127.0.0.1 --port 5000
+cd /Users/mattdoyle/Projects/image-to-bookshelf
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-Set your API key in `secrets/.env`:
+Optional GPU extras:
+
+```bash
+pip install -e ".[gpu,dev]"
+```
+
+## Environment
+
+Create `secrets/.env` (optional but recommended):
 
 ```bash
 GOOGLE_BOOKS_API_KEY=your_google_books_api_key
+
+# Optional DB override
+# If omitted, backend defaults to sqlite:///.../data/dev.db
+# DATABASE_URL=postgresql://user:password@host:5432/bookshelf
 ```
 
-## CLI Commands
+## API Startup
 
-### `python -m bookshelf_scanner.extractor`
+Preferred command (uses console script from `pyproject.toml`):
 
-Run Moondream extraction on one spine image or a directory of spine images.
+```bash
+source .venv/bin/activate
+bookshelf-scanner-api --host localhost --port 5001
+```
+
+Equivalent module command:
+
+```bash
+source .venv/bin/activate
+python -m bookshelf_scanner.web_api --host localhost --port 5001
+```
+
+For LAN/mobile device access, bind all interfaces:
+
+```bash
+bookshelf-scanner-api --host 0.0.0.0 --port 5001
+```
+
+## Database Behavior
+
+- Default DB: `data/dev.db` (created automatically).
+- Tables are auto-created on startup.
+- `DATABASE_URL` overrides SQLite default.
+- Current library routes use a dev identity fallback when auth headers are absent.
+
+Dev identity headers:
+
+- `X-Bookshelf-User-Email`
+- `X-Bookshelf-Username`
+
+If these headers are not sent, all clients use the same default local dev user.
+
+## Core Endpoints
+
+- `GET /health`
+- `GET /`
+- `GET /books/search`
+- `POST /detect/spines`
+- `POST /scan/capture`
+- `GET /library/me/books`
+- `POST /library/me/books`
+- `POST /library/me/books/batch`
+- `PATCH /library/me/books/:id`
+- `DELETE /library/me/books/:id`
+
+## CLI Usage
+
+Extractor:
 
 ```bash
 python -m bookshelf_scanner.extractor INPUT [OPTIONS]
 ```
 
-Arguments:
-
-- `INPUT`: Path to a spine image file or a directory containing images.
-
-Options:
-
-- `--limit N`: Only process the first `N` images.
-- `--output PATH`: Write extraction results to a CSV file.
-- `--model-name NAME`: Model alias, Hugging Face repo ID, or local model path (default: `moondream-0.5b`).
-- `--revision REV`: Model revision when loading from a repo.
-- `--device DEVICE`: `auto`, `cpu`, `cuda`, or `mps` (default: `auto`).
-- `--max-new-tokens N`: Max generated tokens per extraction (default: `100`).
-- `--temperature FLOAT`: Decoding temperature (default: `0.1`).
-- `--cache-dir PATH`: Optional Hugging Face model cache directory.
-- `--modules-cache-dir PATH`: Cache directory for remote model Python modules (default: `.cache/huggingface/modules`).
-- `--local-files-only`: Force offline mode and only use locally cached model files.
-
-### `python -m bookshelf_scanner.lookup`
-
-Look up extraction CSV rows (`title`/`author`) in Google Books and export all returned item fields to a CSV.
+Lookup:
 
 ```bash
 python -m bookshelf_scanner.lookup outputs/extractions/test.csv --output lookup_outputs.csv
 ```
 
-Options:
-
-- `--api-key KEY`: Override API key directly.
-- `--env-file PATH`: Env file path for `GOOGLE_BOOKS_API_KEY` (default: `secrets/.env`).
-- `--max-results N`: Results returned per title query (default: `5`).
-- `--timeout N`: HTTP timeout in seconds (default: `10`).
-
-### `python -m bookshelf_scanner.web_api`
-
-Start a local Flask server for the webcam harness endpoint.
-
-```bash
-python -m bookshelf_scanner.web_api [OPTIONS]
-```
-
-Exposed routes:
-
-- `POST /detect/spines`: return detection boxes for one frame.
-- `POST /scan/capture`: detect spines, run extraction, and perform Google Books lookup.
-- `GET /health`: health check.
-- `GET /`: basic route/help message.
-
-Options:
-
-- `--host HOST`: Bind address (default: `127.0.0.1`).
-- `--port PORT`: Bind port (default: `5000`).
-- `--model-path PATH`: YOLO model path (default: `yolov8n.pt` at repo root).
-- `--confidence FLOAT`: Detector confidence threshold (default: `0.15`).
-- `--iou-threshold FLOAT`: NMS IoU threshold (default: `0.45`).
-- `--device DEVICE`: `auto`, `cpu`, `cuda`, `mps` (default: `auto`).
-- `--classes CSV`: Comma-separated YOLO class IDs (default: `73` for books).
-
-## Webcam Harness Workflow
-
-Use the harness to tune capture-readiness before moving into React Native camera integration.
-
-1. Start API:
-`python -m bookshelf_scanner.web_api --host 127.0.0.1 --port 5000`
-2. Start harness:
-`cd web-harness && npm install && npm run dev`
-3. In the harness UI:
-- Set detector mode to `endpoint`.
-- Use `http://127.0.0.1:5000/detect/spines` for live detections.
-- Use `http://127.0.0.1:5000/scan/capture` for manual capture + extraction + lookup.
-
 Notes:
-- `Mock detections` mode is synthetic and does not use the backend model.
-- Stop the API with `Ctrl+C` (not `Ctrl+Z`, which only suspends the process).
 
-## Note on `bookshelf-scanner`
+- `bookshelf-scanner scan ...` is still a placeholder command.
+- Use module commands above for active extractor/lookup flows.
 
-The packaged command `bookshelf-scanner scan ...` is currently a placeholder and not implemented yet. Use `python -m bookshelf_scanner.extractor ...` for the active CLI path.
+## Web Harness Workflow
 
-## System Requirements
+1. Start backend API on `5000` or `5001`.
+2. Run harness:
+   - `cd web-harness`
+   - `npm install`
+   - `npm run dev`
+3. In harness:
+   - Set detector mode to `endpoint`.
+   - Set detector URL to `/detect/spines`.
+   - Set capture URL to `/scan/capture`.
 
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| Python | 3.10+ | 3.11+ |
-| RAM | 4GB | 8GB |
-| Storage | 2GB | 5GB |
-| GPU | Not required | Any CUDA GPU |
+## Mobile Workflow
 
-## Configuration
-
-Create a `config.yaml` file to customize settings:
-
-```yaml
-detection:
-  confidence: 0.25
-  device: auto
-
-extraction:
-  model: moondream-0.5b  # or moondream-2b for better accuracy
-  device: auto
-
-lookup:
-  api_key: YOUR_GOOGLE_BOOKS_API_KEY  # optional
-
-export:
-  default_shelf: to-read
-```
+1. Start backend API with LAN-safe host:
+   - `bookshelf-scanner-api --host 0.0.0.0 --port 5001`
+2. Start Expo app:
+   - `cd mobile`
+   - `npm install`
+   - `npm run start`
+3. Use base URLs:
+   - Android emulator: `http://10.0.2.2:5001`
+   - iOS simulator: `http://127.0.0.1:5001`
+   - Physical device: `http://<your-mac-lan-ip>:5001`
 
 ## Importing to Goodreads
 
-1. Run extraction to produce your CSV, for example: `python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --output outputs/extractions/my_shelf.csv`
-2. Go to [Goodreads Import](https://www.goodreads.com/review/import)
-3. Upload the generated CSV file
-4. Review and confirm the imports
+1. Run extraction:
+   - `python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --output outputs/extractions/my_shelf.csv`
+2. Open [Goodreads Import](https://www.goodreads.com/review/import).
+3. Upload CSV and confirm.
 
 ## License
 

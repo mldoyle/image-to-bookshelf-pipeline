@@ -14,6 +14,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from PIL import Image
 
+from .api import library_bp
+from .db import init_database
 from .detector import SpineDetector
 from .extractor import BookExtractor
 from .lookup import GoogleBooksClient
@@ -106,11 +108,16 @@ def create_app(
     detector_factory: Callable[[], SpineDetector] | None = None,
     extractor_factory: Callable[[], BookExtractor] | None = None,
     books_client_factory: Callable[[], GoogleBooksClient] | None = None,
+    config_overrides: dict[str, Any] | None = None,
 ) -> Flask:
     app = Flask(__name__)
     CORS(app)
 
     _load_env_file(_repo_root() / "secrets" / ".env")
+    if config_overrides:
+        app.config.update(config_overrides)
+    init_database(app)
+    app.register_blueprint(library_bp)
 
     if detector_factory is None:
         detector_factory = build_detector_factory(

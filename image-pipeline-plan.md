@@ -2,7 +2,19 @@
 
 **Version:** 1.0  
 **Date:** February 2, 2026  
-**Status:** Ready for Claude Code Implementation
+**Status:** Historical reference (initial implementation spec)
+
+---
+
+## Status Note (February 24, 2026)
+
+This document is the original build specification. Large portions have already been implemented and evolved.
+
+For current operational behavior and active roadmap, use:
+
+- `README.md`
+- `backend-user-data-architecture-plan.md`
+- `reactApp_plan.md`
 
 ---
 

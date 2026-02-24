@@ -1,287 +1,133 @@
-# React Native Live Scanner Implementation Plan
+# React Native Scanner Plan (Current State + Next Steps)
 
-## 0. Current Implementation Status (Updated)
+## 0) Current implementation snapshot
 
-This section reflects what is already implemented in this repository.
+### Complete
 
-### Completed
+1. Shared scanner logic (`packages/scanner-core`)
+- IoU tracking, quality scoring, ready-state logic.
+- Unit tests for core deterministic behavior.
 
-1. `packages/scanner-core` is implemented and tested.
-- IoU tracker, quality scorer, ready-state machine, cooldown logic.
-- Deterministic replay-style tests and synthetic unit coverage.
-
-2. `web-harness` is implemented and running.
-- Live webcam preview with overlay boxes.
+2. Web harness (`web-harness`)
+- Live webcam preview and overlays.
 - `mock` and backend `endpoint` detector modes.
-- Live debug panel with detector/parse/track metrics.
-- Runtime tuning controls for thresholds.
-- Scene-level readiness gates to reduce false-ready states.
-- Manual **Capture & Lookup** button to run full backend scan.
+- Manual `Capture & Lookup` path to `/scan/capture`.
+- Debug/threshold controls for tuning.
 
-3. Flask API for webcam integration is implemented.
-- `POST /detect/spines` for frame-level box detection.
-- `POST /scan/capture` for detect -> extract text -> Google Books lookup.
-- `GET /health` and `GET /` helper endpoints.
+3. Backend support
+- `/detect/spines`, `/scan/capture`, `/books/search`.
+- `/library/me/*` persistence endpoints.
 
-### In Progress / Next
+4. Mobile app (`mobile`)
+- Camera preview + local guide overlays.
+- Manual capture flow to backend.
+- Candidate review and accept/reject workflow.
+- Local library caching plus backend upsert integration.
 
-1. Mobile React Native app (`mobile/`) is scaffolded with camera + overlay + capture + review flow.
-2. Android emulator camera-loop validation is still pending.
-3. iOS simulator state-flow validation is still pending.
-4. Physical phone validation is still pending.
+### Partially complete / open
 
-## 1. Scope (MVP Only)
+1. End-to-end validation matrix is incomplete.
+- Android emulator, iOS simulator, and physical device runs need a consolidated test report.
 
-Build a React Native app that:
-1. Streams camera preview.
-2. Detects book spines in realtime and draws boxes.
-3. Turns boxes green when capture quality is sufficient.
-4. Uses on-device guide overlays during preview and manual user capture.
-5. Sends captured photo to the existing backend extraction flow and returns parsed book candidates.
+2. Cross-device live library refresh behavior is not implemented yet.
+- Current sync model is startup/API-base-change driven.
+
+## 1) MVP scope
+
+Build and validate a mobile flow that:
+
+1. Captures shelf images.
+2. Calls backend scan/lookup.
+3. Lets users confirm/reject candidate books.
+4. Persists accepted books to user library.
 
 Not in MVP:
-- Full on-device OCR.
-- Model training pipeline.
-- OBB migration (keep as post-MVP improvement).
 
-## 2. Testing Reality and Order
+- Full auth/session UX.
+- Real-time multi-device collaboration features.
+- On-device OCR replacement for backend extraction.
 
-1. Laptop camera first (required): use a web harness with `getUserMedia` to tune readiness logic quickly.
-2. Emulator second (required):
-- Android emulator with webcam passthrough for camera-loop behavior.
-- iOS simulator for UI/state flow only.
-3. Physical phones third (required): final validation for autofocus, blur, FPS, latency.
+## 2) Shared interfaces
 
-Important constraint:
-- This current CLI environment cannot run GUI camera testing end-to-end.
+Keep these as the shared contract boundaries:
 
-## 3. Code Structure to Create
+1. `scanner-core` detection tracking and readiness APIs.
+2. Backend response shape for `/detect/spines` and `/scan/capture`.
+3. Library API shape for `/library/me/books*`.
 
-```text
-mobile/
-  App.tsx
-  src/
-    camera/
-      CameraScreen.tsx
-      FrameProcessorBridge.ts
-    overlay/
-      BoxOverlay.tsx
-    capture/
-      CaptureController.ts
-    api/
-      extractionClient.ts
-    types/
-      vision.ts
-packages/
-  scanner-core/
-    src/
-      types.ts
-      iouTracker.ts
-      qualityScorer.ts
-      readyStateMachine.ts
-    test/
-      iouTracker.test.ts
-      qualityScorer.test.ts
-      readyStateMachine.test.ts
-web-harness/
-  src/
-    WebcamPage.tsx
-    detectorAdapter.ts
-```
+## 3) Current mobile flow
 
-## 4. Required Interfaces
+1. User opens camera.
+2. User manually triggers capture.
+3. App sends image to `/scan/capture`.
+4. App presents candidate review stack.
+5. Accepted items are merged into local library and upserted to backend.
 
-Implement these interfaces first so all environments share behavior:
+Known current behavior:
 
-```ts
-// packages/scanner-core/src/types.ts
-export type DetectionBox = {
-  x: number; y: number; w: number; h: number;
-  confidence: number;
-  timestampMs: number;
-};
+- Preview does not continuously call backend detector.
+- Library sync from backend is not live; cache is authoritative between sync points.
 
-export type Track = {
-  trackId: number;
-  box: DetectionBox;
-  stableFrames: number;
-  lastSeenMs: number;
-};
+## 4) Validation plan
 
-export type ReadyResult = {
-  ready: boolean;
-  score: number;
-  reasons: string[];
-};
-```
+### Step A: Android emulator validation
 
-```ts
-// mobile/src/camera/FrameProcessorBridge.ts
-export type FrameDetections = {
-  frameWidth: number;
-  frameHeight: number;
-  boxes: DetectionBox[];
-  frameTimestampMs: number;
-};
-```
-
-## 5. Step-by-Step Execution Plan
-
-## Step 1: Build shared scoring/tracking core (required first)
-
-Status: COMPLETE
-
-Actions:
-1. Create `packages/scanner-core` with TypeScript build config.
-2. Implement IoU tracker:
-- Match detections to existing tracks by IoU >= 0.3.
-- Start new tracks for unmatched detections.
-- Drop tracks not seen for 400ms.
-3. Implement quality scoring:
-- Inputs: confidence, area ratio, edge margin, stableFrames.
-- Score formula:
-  - `score = 0.35*confidence + 0.25*area + 0.20*margin + 0.20*stability`
-4. Implement ready rule:
-- `score >= 0.72` for at least 10 consecutive processed frames.
-5. Implement cooldown rule:
-- after capture trigger, ignore new triggers for 1500ms.
-6. Add unit tests for all rules.
-
-Deliverables:
-- `packages/scanner-core/src/*`
-- Passing tests in `packages/scanner-core/test/*`
+1. Configure AVD camera passthrough.
+2. Validate capture + review + library write.
+3. Verify behavior across repeated sessions.
 
 Exit criteria:
-- Deterministic replay test proves one trigger fires once for a stable sequence.
 
-## Step 2: Build laptop webcam harness (required before mobile tuning)
+- Three stable runs with no blocking errors.
 
-Status: COMPLETE (extended with manual capture + lookup flow for backend validation)
+### Step B: iOS simulator validation
 
-Actions:
-1. Create `web-harness` app (Vite + React TS).
-2. Use `navigator.mediaDevices.getUserMedia({ video: true })`.
-3. Add detector adapter (temporary options):
-- Option A: call local detection endpoint.
-- Option B: use mock detections first, then replace with real detector.
-4. Pipe detections through `scanner-core`.
-5. Render boxes on `<canvas>`:
-- yellow when detected.
-- green when `ReadyResult.ready === true`.
-6. Auto-capture snapshot when state machine emits trigger.
-7. Add debug panel for thresholds and live score breakdown.
-
-Deliverables:
-- `web-harness/src/WebcamPage.tsx`
-- `web-harness/src/detectorAdapter.ts`
+1. Validate state transitions and API integration.
+2. Confirm URL/base-host behavior.
 
 Exit criteria:
-- Laptop webcam run shows stable green transition and single auto-capture event.
 
-## Step 3: Create RN app camera loop
+- No state-machine regressions in camera/review/library navigation.
 
-Status: IMPLEMENTED (awaiting emulator/device run validation)
+### Step C: physical device validation
 
-Actions:
-1. Scaffold RN app under `mobile/`.
-2. Install and configure:
-- Expo React Native setup (`expo-camera`) for Android emulator, iOS simulator flow checks, and iPhone testing.
-3. Implement `CameraScreen.tsx`:
-- request permissions.
-- start preview.
-4. Implement on-device preview guidance overlay and keep manual capture control on the device.
-5. Reuse `scanner-core` unchanged for track/score/ready decisions.
-6. Render overlay boxes above camera preview.
-7. Send one captured photo to `/scan/capture` and show accept/reject review feed.
-
-Deliverables:
-- `mobile/src/camera/CameraScreen.tsx`
-- `mobile/src/camera/FrameProcessorBridge.ts`
-- `mobile/src/overlay/BoxOverlay.tsx`
-- `mobile/src/api/extractionClient.ts`
-- `mobile/src/capture/CaptureController.ts`
-- `mobile/src/App.tsx`
-- `mobile/README.md`
+1. Validate on at least one iPhone and one Android phone.
+2. Run in multiple lighting conditions.
+3. Measure practical capture-to-result latency and success rate.
 
 Exit criteria:
-- Live preview + guide overlay + manual capture + result review feed are implemented and ready to validate on emulator/device.
 
-## Step 5: Emulator validation (must pass before phone testing)
+- Reliable capture + review completion in normal indoor conditions.
 
-Status: NOT STARTED
+## 5) Next engineering milestones
 
-Actions:
-1. Android Emulator:
-- set camera source to webcam in AVD settings.
-- run app and validate full live loop.
-2. iOS Simulator:
-- validate UI state transitions and capture flow logic.
-- do not use as camera-quality validation.
+### Milestone 1: Sync UX hardening
 
-Deliverables:
-- Validation notes with observed FPS and trigger behavior.
+1. Add explicit manual refresh in library UI.
+2. Add foreground re-sync when app becomes active.
+3. Optional periodic polling (configurable interval).
 
-Exit criteria:
-- Android emulator behaves reliably for 3 continuous test runs.
+### Milestone 2: Identity hardening
 
-## Step 6: Real device validation (required for release decisions)
+1. Move from dev-user fallback to authenticated user identity.
+2. Pass auth context in all mobile library requests.
+3. Add logout/login state handling in mobile.
 
-Status: NOT STARTED
+### Milestone 3: Error handling hardening
 
-Actions:
-1. Run on one iPhone and one Android phone.
-2. Validate in 3 scenes:
-- good light.
-- low light.
-- angled shelf.
-3. Record metrics:
-- preview FPS.
-- detection latency.
-- trigger-to-capture delay.
-4. Tune thresholds only in `scanner-core` config (single source of truth).
+1. Show recoverable network error states for capture and library sync.
+2. Add retry controls for failed writes.
+3. Preserve pending local writes for later retry.
 
-Deliverables:
-- Device test report with final threshold values.
+### Milestone 4: Observability
 
-Exit criteria:
-- FPS >= 18, trigger-to-capture delay <= 300ms, stable capture in good light.
+1. Add structured client-side logging around capture and sync.
+2. Add request IDs to correlate mobile and backend events.
 
-## Step 7: Integrate backend extraction
+## 6) Done criteria for this plan
 
-Status: PARTIALLY COMPLETE FOR WEB HARNESS + RN IMPLEMENTATION ADDED (validation pending)
+This plan is complete when:
 
-Actions:
-1. Define POST endpoint contract:
-- request: image file + session metadata.
-- response: array of candidate books.
-2. Implement `mobile/src/api/extractionClient.ts`.
-3. After capture, upload image and render results screen.
-4. Handle failures: timeout, non-200, empty results.
-
-Deliverables:
-- `mobile/src/api/extractionClient.ts`
-- Capture-to-results UI flow
-
-Exit criteria:
-- From live scan to parsed book candidates in one uninterrupted flow.
-
-## 6. Critical Configuration Values (initial)
-
-These must be implemented as runtime-configurable constants:
-
-- `IOU_MATCH_THRESHOLD = 0.30`
-- `TRACK_STALE_MS = 400`
-- `READY_SCORE_THRESHOLD = 0.72`
-- `READY_CONSECUTIVE_FRAMES = 10`
-- `CAPTURE_COOLDOWN_MS = 1500`
-- `MIN_BOX_AREA_RATIO = 0.015`
-- `MIN_EDGE_MARGIN_RATIO = 0.03`
-
-## 7. Completion Criteria (MVP Done)
-
-MVP is done only when all are true:
-1. Live camera boxes render in RN app.
-2. Boxes turn green based on shared scoring logic.
-3. App enables capture when ready/mostly-ready and performs one scan per user capture.
-4. Capture uploads to backend and returns candidate book list.
-5. Workflow validated on both a physical Android and physical iPhone.
+1. Validation report exists for emulator + physical devices.
+2. Manual refresh (or equivalent re-sync trigger) is implemented.
+3. Identity model is no longer shared-dev-user by default for normal app use.

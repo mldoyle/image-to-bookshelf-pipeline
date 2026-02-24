@@ -69,7 +69,26 @@ export const libraryStorageKeys = {
 export const loadLibraryBooks = async (): Promise<LibraryBook[]> => {
   const raw = await asyncStorage.getItem(BOOKS_KEY);
   const parsed = parseJson<LibraryBook[]>(raw);
-  return Array.isArray(parsed) ? parsed : [];
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.map((book) => ({
+    ...book,
+    genres: Array.isArray(book.genres) ? book.genres : [],
+    rating:
+      typeof book.rating === "number" && Number.isFinite(book.rating) ? book.rating : null,
+    review: typeof book.review === "string" ? book.review : null,
+    loaned: Boolean(book.loaned),
+    coverThumbnail: book.coverThumbnail || null,
+    googleBooksId: book.googleBooksId || null,
+    publishedYear:
+      typeof book.publishedYear === "number" && Number.isFinite(book.publishedYear)
+        ? book.publishedYear
+        : null,
+    addedAt: book.addedAt || new Date().toISOString(),
+    source: book.source === "search" ? "search" : "scan"
+  }));
 };
 
 export const saveLibraryBooks = async (books: LibraryBook[]): Promise<void> => {

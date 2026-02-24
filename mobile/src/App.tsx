@@ -11,6 +11,11 @@ import {
   View
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import {
+  batchUpsertLibraryBooks,
+  fetchLibraryBooks,
+  patchLibraryBook
+} from "./api/libraryClient";
 import BackIcon from "./icons/BackIcon";
 import { CameraScreen } from "./camera/CameraScreen";
 import { BookProfileScreen } from "./library/BookProfileScreen";
@@ -330,6 +335,51 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!libraryReady) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncLibraryFromBackend = async () => {
+      const cachedBooks = await loadLibraryBooks();
+      let merged = cachedBooks;
+
+      try {
+        const remoteBooks = await fetchLibraryBooks(apiBaseUrl, 10000);
+        merged = mergeLibraryBooks(remoteBooks, cachedBooks);
+      } catch {
+        // Keep cached data when backend is unavailable.
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      setLibraryBooks(merged);
+      void saveLibraryBooks(merged);
+
+      try {
+        const syncedBooks = await batchUpsertLibraryBooks(apiBaseUrl, merged, 12000);
+        if (cancelled || syncedBooks.length === 0) {
+          return;
+        }
+        const next = mergeLibraryBooks(merged, syncedBooks);
+        setLibraryBooks(next);
+        void saveLibraryBooks(next);
+      } catch {
+        // Local cache remains valid; next successful sync will reconcile.
+      }
+    };
+
+    void syncLibraryFromBackend();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, libraryReady]);
+
   const reviewSummary = useMemo(() => summarizeReview(reviewCaptures), [reviewCaptures]);
   const acceptedKeys = useMemo(() => getAcceptedKeySet(reviewCaptures), [reviewCaptures]);
   const acceptedItems = useMemo(() => collectAcceptedItems(reviewCaptures), [reviewCaptures]);
@@ -380,28 +430,74 @@ export default function App() {
   }, [resetCaptureSession]);
 
   const updateBooks = useCallback((incoming: LibraryBook[]) => {
+    if (incoming.length === 0) {
+      return;
+    }
+
     setLibraryBooks((current) => {
       const merged = mergeLibraryBooks(current, incoming);
       void saveLibraryBooks(merged);
       return merged;
     });
-  }, []);
+
+    void batchUpsertLibraryBooks(apiBaseUrl, incoming, 12000)
+      .then((syncedBooks) => {
+        if (syncedBooks.length === 0) {
+          return;
+        }
+        setLibraryBooks((current) => {
+          const merged = mergeLibraryBooks(current, syncedBooks);
+          void saveLibraryBooks(merged);
+          return merged;
+        });
+      })
+      .catch(() => {
+        // Cache-first behavior: keep local state and retry on next sync cycle.
+      });
+  }, [apiBaseUrl]);
 
   const onToggleLoaned = useCallback((bookId: string) => {
+    const currentBook = libraryBooks.find((book) => book.id === bookId);
+    if (!currentBook) {
+      return;
+    }
+
+    const updatedBook: LibraryBook = {
+      ...currentBook,
+      loaned: !currentBook.loaned
+    };
+
     setLibraryBooks((current) => {
-      const next = current.map((book) => {
-        if (book.id !== bookId) {
-          return book;
-        }
-        return {
-          ...book,
-          loaned: !book.loaned
-        };
-      });
+      const next = current.map((book) => (book.id === bookId ? updatedBook : book));
       void saveLibraryBooks(next);
       return next;
     });
-  }, []);
+
+    void patchLibraryBook(apiBaseUrl, bookId, { loaned: updatedBook.loaned }, 10000)
+      .then((syncedBook) => {
+        setLibraryBooks((current) => {
+          const merged = mergeLibraryBooks(current, [syncedBook]);
+          void saveLibraryBooks(merged);
+          return merged;
+        });
+      })
+      .catch(() => {
+        void batchUpsertLibraryBooks(apiBaseUrl, [updatedBook], 12000)
+          .then((syncedBooks) => {
+            if (syncedBooks.length === 0) {
+              return;
+            }
+            setLibraryBooks((current) => {
+              const merged = mergeLibraryBooks(current, syncedBooks);
+              void saveLibraryBooks(merged);
+              return merged;
+            });
+          })
+          .catch(() => {
+            // Cache-first behavior: keep local state and retry on later sync.
+          });
+      });
+  }, [apiBaseUrl, libraryBooks]);
 
   const onViewModeChange = useCallback((viewMode: LibraryViewMode) => {
     setLibraryViewMode(viewMode);
@@ -499,17 +595,13 @@ export default function App() {
     const acceptedBooks = acceptedItems.map((item) => toLibraryBookFromFeedItem(item));
 
     if (acceptedBooks.length > 0) {
-      setLibraryBooks((current) => {
-        const merged = mergeLibraryBooks(current, acceptedBooks);
-        void saveLibraryBooks(merged);
-        return merged;
-      });
+      updateBooks(acceptedBooks);
     }
 
     resetCaptureSession();
     setRecentlyAddedDefaults();
     setPhase("library");
-  }, [acceptedItems, resetCaptureSession, setRecentlyAddedDefaults]);
+  }, [acceptedItems, resetCaptureSession, setRecentlyAddedDefaults, updateBooks]);
 
   if (!libraryReady) {
     return (

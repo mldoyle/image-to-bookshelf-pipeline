@@ -29,10 +29,17 @@ To run real backend detections from this repo:
 
 ```bash
 cd /Users/mattdoyle/Projects/image-to-bookshelf
-python -m bookshelf_scanner.web_api --host 127.0.0.1 --port 5000
+source .venv/bin/activate
+bookshelf-scanner-api --host localhost --port 5000
 ```
 
 Stop API with `Ctrl+C` (not `Ctrl+Z`).
+
+If you also need mobile/LAN access at the same time, run:
+
+```bash
+bookshelf-scanner-api --host 0.0.0.0 --port 5000
+```
 
 ## Recommended Harness Configuration
 

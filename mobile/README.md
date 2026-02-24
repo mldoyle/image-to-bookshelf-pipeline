@@ -1,87 +1,72 @@
-# Mobile Scanner (Step 3)
+# Mobile App
 
-This folder contains the React Native camera loop for Android/iOS testing.
+React Native (Expo) client for camera capture, candidate review, and local library browsing.
 
-## What is implemented
+## Current behavior
 
-- Start screen with `Open Camera` button.
-- Live camera preview.
-- On-device guide overlay (QR-style framing hints) during preview.
-- Lightweight on-device shelf-band detection from preview snapshots for dynamic guide boxes.
-- Animated rotate prompt when the phone is in portrait mode (`Rotate to capture more books.`).
-- Manual `Capture & Lookup` controlled by the user.
-- No live detector network polling during preview.
-- One-card review flow with Tinder-style `Accept` / `Reject` actions.
-- Only the first candidate per detected spine is shown in review.
+- Camera preview with on-device guide overlays and orientation hints.
+- Manual `Capture & Lookup` flow (no live backend polling during preview).
+- Capture posts to `/scan/capture`, then user reviews candidates.
+- Review supports multiple candidates per spine; rejecting advances to the next unique candidate if available.
+- Accepted books are merged into local cache and upserted to backend `/library/me/books*`.
+- Library data sync from backend currently runs on startup and when API base URL changes.
 
-## Install and run
+## Run locally
 
-1. Install dependencies:
+1. Start backend (from repo root):
+
+```bash
+cd /Users/mattdoyle/Projects/image-to-bookshelf
+source .venv/bin/activate
+bookshelf-scanner-api --host 0.0.0.0 --port 5001
+```
+
+2. Start Expo app:
 
 ```bash
 cd /Users/mattdoyle/Projects/image-to-bookshelf/mobile
 npm install
-```
-
-2. Start backend API from repo root (required):
-
-```bash
-cd /Users/mattdoyle/Projects/image-to-bookshelf
-python -m bookshelf_scanner.web_api --host 0.0.0.0 --port 5001
-```
-
-3. Start Expo:
-
-```bash
-cd /Users/mattdoyle/Projects/image-to-bookshelf/mobile
 npm run start
 ```
 
-## Emulator and device setup
+## Base URL by target
 
-### Android emulator (camera loop validation)
+Android emulator:
 
-- In Android Studio AVD settings, set `Camera Back` to `Webcam0`.
-- Launch emulator.
-- In app base URL field use `http://10.0.2.2:5001`.
-- Run with:
+- URL: `http://10.0.2.2:5001`
+- AVD should map `Camera Back` to `Webcam0` for camera-loop validation.
+- Launch: `npm run android`
 
-```bash
-npm run android
-```
+iOS simulator:
 
-### iOS simulator (UI/state flow validation)
+- URL: `http://127.0.0.1:5001`
+- Use for UI/state flow checks, not real camera quality validation.
+- Launch: `npm run ios`
 
-- iOS Simulator does not represent real camera quality, so use it for state flow checks only.
-- In app base URL use `http://127.0.0.1:5001`.
-- Run with:
+Physical device:
 
-```bash
-npm run ios
-```
+- URL: `http://<your-mac-lan-ip>:5001` (for example `http://192.168.1.12:5001`)
+- Mac and phone must be on the same Wi-Fi network.
+- Start with `npm run start` and open via Expo Go.
 
-### Physical iPhone (recommended for real validation)
+## Library sync and identity notes
 
-- Install Expo Go on iPhone.
-- Connect iPhone and Mac to the same Wi-Fi network.
-- In app base URL use your Mac LAN IP, for example `http://192.168.1.12:5001`.
-- From `npm run start`, scan the QR code in Expo Go.
+- Backend library routes default to a shared dev user unless user headers are sent.
+- Because of that, multiple clients can write into the same library by default.
+- Remote changes from another device are not live-streamed; they appear after app restart, API URL change, or when future manual/periodic refresh is added.
 
-## Notes
+## Implementation notes
 
-- This app reuses `@scanner-core` directly from `../packages/scanner-core/src` via Metro + TypeScript aliases.
-- Preview guidance runs locally on device; the server pipeline runs only after capture.
-- This app targets Expo SDK 54 (Expo Go iOS requires latest SDK support).
-- Orientation is set to `default` so users can rotate to landscape for capture.
+- `@scanner-core` is reused from `../packages/scanner-core/src` via Metro + TypeScript aliases.
+- Preview guidance logic runs locally; backend pipeline runs after manual capture.
+- Targets Expo SDK 54.
+- Orientation is `default` so capture can rotate to landscape.
 
 ## SVG icon build
-
-- Place exported icon SVGs in `/Users/mattdoyle/Projects/image-to-bookshelf/mobile/assets/icons`.
-- Regenerate icon components with:
 
 ```bash
 cd /Users/mattdoyle/Projects/image-to-bookshelf/mobile
 npm run icons:build
 ```
 
-- The generated React Native icon components are written to `/Users/mattdoyle/Projects/image-to-bookshelf/mobile/src/icons`.
+Generated icon components are written to `mobile/src/icons`.
