@@ -181,13 +181,13 @@ const styles = StyleSheet.create({
   backButton: {
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
   },
   backButtonText: {
-    color: colors.textPrimary,
+    color: colors.background,
     fontWeight: "700"
   },
   title: {
@@ -218,13 +218,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.accent
+    backgroundColor: colors.white
   },
   searchButtonDisabled: {
     opacity: 0.4
   },
   searchButtonText: {
-    color: "#003125",
+    color: colors.background,
     fontWeight: "800"
   },
   resultCount: {
@@ -297,19 +297,18 @@ const styles = StyleSheet.create({
     minWidth: 72,
     height: 36,
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.white,
     alignItems: "center",
     justifyContent: "center"
   },
   addedButton: {
-    backgroundColor: colors.accentMuted,
-    borderColor: colors.accent
+    backgroundColor: colors.white,
+    borderColor: colors.white
   },
   addButtonText: {
-    color: colors.textPrimary,
+    color: colors.background,
     fontWeight: "700"
   }
 });
-

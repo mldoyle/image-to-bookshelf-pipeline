@@ -10,3 +10,4 @@ dist/
 # Local secrets
 secrets/.env
 .env
+Cardstackapprovalinterface/

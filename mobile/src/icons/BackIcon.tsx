@@ -9,7 +9,7 @@ const SvgBackIcon = (props: SvgProps) => (
     {...props}
   >
     <Path
-      stroke="#fff"
+      stroke={props.color ?? "#fff"}
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}

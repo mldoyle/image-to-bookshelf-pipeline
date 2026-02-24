@@ -546,7 +546,7 @@ export function CameraScreen({
       ) : null}
 
       <Pressable style={[styles.topIconButton, styles.backButton]} onPress={onBack}>
-        <BackIcon />
+        <BackIcon color={colors.background} />
       </Pressable>
 
       <Pressable
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 22,
-    backgroundColor: "rgba(20,24,28,0.35)"
+    backgroundColor: colors.white
   },
   reviewButtonDisabled: {
     opacity: 0.55
@@ -732,25 +732,25 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: 8,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.white,
     borderRadius: 12,
     paddingHorizontal: 18,
     paddingVertical: 12
   },
   primaryButtonLabel: {
-    color: colors.surface,
+    color: colors.background,
     fontWeight: "700"
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: colors.textPrimary,
+    borderColor: colors.white,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "rgba(20,24,28,0.5)"
+    backgroundColor: colors.white
   },
   secondaryButtonLabel: {
-    color: colors.textPrimary,
+    color: colors.background,
     fontWeight: "700"
   }
 });

@@ -30,6 +30,14 @@ const icons = [
     output: "src/icons/SelectNoCapturesIcon.tsx"
   },
   {
+    input: "assets/icons/accept-book.svg",
+    output: "src/icons/AcceptBookIcon.tsx"
+  },
+  {
+    input: "assets/icons/decline-book.svg",
+    output: "src/icons/DeclineBookIcon.tsx"
+  },
+  {
     input: "assets/icons/orientation=portrait.svg",
     output: "src/icons/RotatePortraitIcon.tsx"
   },

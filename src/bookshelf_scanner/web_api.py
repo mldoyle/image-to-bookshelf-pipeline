@@ -209,6 +209,9 @@ def create_app(
     def _missing_api_key_message() -> str:
         return "Google Books API key is not configured. Set GOOGLE_BOOKS_API_KEY in secrets/.env."
 
+    def _normalized_extracted_title(title: str) -> str:
+        return " ".join((title or "").strip().lower().split())
+
     @app.get("/books/search")
     def books_search():
         query = (request.args.get("q") or "").strip()
@@ -343,6 +346,7 @@ def create_app(
 
         started_extract_lookup = time.perf_counter()
         spine_results: list[dict[str, Any]] = []
+        seen_extracted_titles: set[str] = set()
         for crop_image, spine in zip(spine_images, spines):
             # Stage 2: run OCR/extraction per cropped spine.
             extraction = extractor.extract(crop_image)
@@ -352,6 +356,17 @@ def create_app(
 
             title = extraction.title.strip()
             author = (extraction.author or "").strip() or None
+            normalized_title = _normalized_extracted_title(title)
+
+            if normalized_title and not normalized_title.startswith("["):
+                if normalized_title in seen_extracted_titles:
+                    logger.info(
+                        "scan/capture dropping duplicate extracted title spine_index=%s title=%s",
+                        spine.index,
+                        title,
+                    )
+                    continue
+                seen_extracted_titles.add(normalized_title)
 
             if title and not title.startswith("["):
                 if not has_books_api_key:

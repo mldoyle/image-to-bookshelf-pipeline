@@ -191,13 +191,13 @@ const styles = StyleSheet.create({
   toggleButton: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.surface
+    backgroundColor: colors.white
   },
   toggleButtonActive: {
-    backgroundColor: colors.accentMuted
+    backgroundColor: colors.white
   },
   toggleLabel: {
-    color: colors.textPrimary,
+    color: colors.background,
     fontWeight: "700"
   },
   apiWrap: {
@@ -260,12 +260,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     alignSelf: "flex-start",
     borderRadius: radius.md,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
   },
   emptyActionText: {
-    color: "#003125",
+    color: colors.background,
     fontWeight: "800"
   }
 });

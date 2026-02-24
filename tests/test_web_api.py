@@ -28,14 +28,34 @@ class _FakeDetector:
         return [image], [_FakeSpine((0, 0, image.width, image.height), 0.98, 0)]
 
 
+class _DuplicateFakeDetector:
+    def detect_all(self, image: Image.Image, min_area: int, max_detections: int):
+        crops = [image, image]
+        spines = [
+            _FakeSpine((0, 0, image.width, image.height), 0.98, 0),
+            _FakeSpine((0, 0, image.width, image.height), 0.97, 1),
+        ]
+        return crops, spines
+
+
 class _FakeExtractor:
     def extract(self, spine_image: Image.Image) -> _FakeExtraction:
+        return _FakeExtraction("Dune", "Frank Herbert", 0.91)
+
+
+class _DuplicateFakeExtractor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract(self, spine_image: Image.Image) -> _FakeExtraction:
+        self.calls += 1
         return _FakeExtraction("Dune", "Frank Herbert", 0.91)
 
 
 class _FakeBooksClient:
     def __init__(self) -> None:
         self.search_calls: list[tuple[str, int | None]] = []
+        self.lookup_calls: list[tuple[str, str | None]] = []
 
     @staticmethod
     def _payload() -> dict:
@@ -65,6 +85,7 @@ class _FakeBooksClient:
         }
 
     def lookup(self, title: str, author: str | None = None) -> dict:
+        self.lookup_calls.append((title, author))
         return self._payload()
 
     def search(self, query: str, max_results: int | None = None) -> dict:
@@ -193,3 +214,39 @@ def test_scan_capture_returns_missing_api_key_error_when_unset():
     assert lookup["totalItems"] == 0
     assert lookup["items"] == []
     assert lookup["error"].startswith("missing_api_key:")
+
+
+def test_scan_capture_dedupes_duplicate_extracted_titles_before_lookup():
+    books_holder: dict[str, _FakeBooksClient] = {}
+
+    def _books_factory():
+        client = _FakeBooksClient()
+        books_holder["client"] = client
+        return client
+
+    app = create_app(
+        detector_factory=lambda: _DuplicateFakeDetector(),
+        extractor_factory=lambda: _DuplicateFakeExtractor(),
+        books_client_factory=_books_factory,
+    )
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    image_file, filename = _build_image_payload()
+
+    response = client.post(
+        "/scan/capture",
+        data={
+            "image": (image_file, filename),
+            "minArea": "100",
+            "maxDetections": "5",
+            "maxLookupResults": "1",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["count"] == 1
+    assert len(payload["spines"]) == 1
+    assert payload["spines"][0]["extraction"]["title"] == "Dune"
+    assert books_holder["client"].lookup_calls == [("Dune", "Frank Herbert")]

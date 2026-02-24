@@ -54,9 +54,9 @@ const styles = StyleSheet.create({
   menu: {
     marginBottom: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.white,
     overflow: "hidden"
   },
   menuAction: {
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg
   },
   menuActionText: {
-    color: colors.textPrimary,
+    color: colors.background,
     textAlign: "center",
     fontWeight: "700"
   },
@@ -73,21 +73,20 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.white,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#95f1d6"
+    borderColor: colors.white
   },
   fabOpen: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border
+    backgroundColor: colors.white,
+    borderColor: colors.white
   },
   fabGlyph: {
-    color: "#013326",
+    color: colors.background,
     fontSize: 32,
     fontWeight: "700",
     lineHeight: 34
   }
 });
-
