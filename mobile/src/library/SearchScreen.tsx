@@ -11,6 +11,7 @@ import {
   View
 } from "react-native";
 import { searchBooks } from "../api/booksClient";
+import AcceptBookIcon from "../icons/AcceptBookIcon";
 import { colors } from "../theme/colors";
 import { radius, spacing, typography } from "../theme/tokens";
 import type { LookupBookItem } from "../types/vision";
@@ -44,7 +45,6 @@ export function SearchScreen({ apiBaseUrl, onBack, onAddLookupItem }: SearchScre
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<LookupBookItem[]>([]);
-  const [addedKeys, setAddedKeys] = useState<Set<string>>(new Set());
 
   const canSearch = query.trim().length > 1;
   const resultCountLabel = useMemo(() => `${results.length} result${results.length === 1 ? "" : "s"}`, [results.length]);
@@ -117,8 +117,6 @@ export function SearchScreen({ apiBaseUrl, onBack, onAddLookupItem }: SearchScre
           keyExtractor={(item, index) => item.id || `${item.title || "unknown"}-${index}`}
           contentContainerStyle={styles.resultsContent}
           renderItem={({ item }) => {
-            const key = item.id || `${item.title || ""}:${item.authors?.join(",") || ""}`;
-            const added = addedKeys.has(key);
             return (
               <View style={styles.resultCard}>
                 <View style={styles.coverWrap}>
@@ -147,14 +145,13 @@ export function SearchScreen({ apiBaseUrl, onBack, onAddLookupItem }: SearchScre
                 </View>
 
                 <Pressable
-                  style={[styles.addButton, added && styles.addedButton]}
+                  style={styles.addButton}
                   onPress={() => {
                     onAddLookupItem(item);
-                    setAddedKeys((current) => new Set(current).add(key));
+                    onBack();
                   }}
-                  disabled={added}
                 >
-                  <Text style={styles.addButtonText}>{added ? "Added" : "Add"}</Text>
+                  <AcceptBookIcon width={24} height={24} color="#55656B" />
                 </Pressable>
               </View>
             );
@@ -294,7 +291,7 @@ const styles = StyleSheet.create({
     fontSize: typography.caption
   },
   addButton: {
-    minWidth: 72,
+    width: 36,
     height: 36,
     borderRadius: radius.md,
     backgroundColor: colors.white,
@@ -302,13 +299,5 @@ const styles = StyleSheet.create({
     borderColor: colors.white,
     alignItems: "center",
     justifyContent: "center"
-  },
-  addedButton: {
-    backgroundColor: colors.white,
-    borderColor: colors.white
-  },
-  addButtonText: {
-    color: colors.background,
-    fontWeight: "700"
   }
 });
