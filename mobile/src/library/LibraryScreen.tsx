@@ -5,7 +5,7 @@ import { LibraryGridItem } from "./components/LibraryGridItem";
 import { LibraryListItem } from "./components/LibraryListItem";
 import { selectVisibleLibraryBooks } from "./selectors";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/tokens";
+import { fontFamilies, radius, spacing } from "../theme/tokens";
 import type { LibraryBook, LibraryFilters, LibraryViewMode } from "../types/library";
 
 type LibraryCategory = "read" | "reviews";
@@ -27,7 +27,7 @@ export function LibraryScreen({ books, viewMode, filters, onViewModeChange, onTo
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <AppText variant="label" tone="muted">
+        <AppText variant="label" tone="muted" style={styles.headerTitle}>
           Library
         </AppText>
         <AppText variant="bodySm" tone="muted">
@@ -119,6 +119,9 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.xs
+  },
+  headerTitle: {
+    fontFamily: fontFamilies.serifSemiBold
   },
   panel: {
     flex: 1,

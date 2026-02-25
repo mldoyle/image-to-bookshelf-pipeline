@@ -10,7 +10,7 @@ import {
   View
 } from "react-native";
 import { colors } from "../../theme/colors";
-import { radius, spacing, typography } from "../../theme/tokens";
+import { fontFamilies, radius, spacing, typography } from "../../theme/tokens";
 import {
   DEFAULT_LIBRARY_FILTERS,
   UNKNOWN_GENRE,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.textPrimary,
     fontSize: typography.h2,
-    fontWeight: "800"
+    fontFamily: fontFamilies.serifBold
   },
   dismissText: {
     color: colors.textSecondary,
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textPrimary,
     fontSize: typography.h3,
-    fontWeight: "700"
+    fontFamily: fontFamilies.serifSemiBold
   },
   wrapRow: {
     flexDirection: "row",
@@ -403,4 +403,3 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   }
 });
-

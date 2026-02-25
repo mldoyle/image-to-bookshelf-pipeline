@@ -36,6 +36,8 @@ import {
 } from "./library/storage";
 import { BookApprovalStack, type ReviewStackCard } from "./review/BookApprovalStack";
 import { colors } from "./theme/colors";
+import { fontFamilies } from "./theme/tokens";
+import { useAppFonts } from "./utils/fonts";
 import { DEFAULT_LIBRARY_FILTERS, type LibraryBook, type LibraryFilters, type LibraryViewMode } from "./types/library";
 import type { CaptureScanResponse, CaptureScanSpine, FeedItem, LookupBookItem } from "./types/vision";
 
@@ -282,6 +284,11 @@ const resolveMetroHost = (): string | null => {
 };
 
 export default function App() {
+  const [fontsLoaded, fontError] = useAppFonts({
+    "SourceSerif4-Regular": require("../assets/fonts/Source_Serif_4/static/SourceSerif4-Regular.ttf"),
+    "SourceSerif4-SemiBold": require("../assets/fonts/Source_Serif_4/static/SourceSerif4-SemiBold.ttf"),
+    "SourceSerif4-Bold": require("../assets/fonts/Source_Serif_4/static/SourceSerif4-Bold.ttf")
+  });
   const metroHost = resolveMetroHost();
   const resolvedDefaultApiBaseUrl = useMemo(() => {
     if (Platform.OS === "android") {
@@ -608,12 +615,14 @@ export default function App() {
     setPhase("library");
   }, [acceptedItems, resetCaptureSession, setRecentlyAddedDefaults, updateBooks]);
 
-  if (!libraryReady) {
+  const appReady = libraryReady && (fontsLoaded || Boolean(fontError));
+
+  if (!appReady) {
     return (
       <SafeAreaView style={styles.loadingScreen}>
         <StatusBar style="light" />
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.loadingText}>Loading library...</Text>
+        <Text style={styles.loadingText}>Loading app...</Text>
       </SafeAreaView>
     );
   }
@@ -858,7 +867,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: "800",
+    fontFamily: fontFamilies.serifBold,
     color: colors.white
   },
   subtitle: {
@@ -879,7 +888,7 @@ const styles = StyleSheet.create({
   },
   doneTitle: {
     fontSize: 24,
-    fontWeight: "900",
+    fontFamily: fontFamilies.serifBold,
     color: colors.white
   },
   acceptedList: {
@@ -899,7 +908,7 @@ const styles = StyleSheet.create({
   acceptedTitle: {
     fontSize: 16,
     color: colors.white,
-    fontWeight: "700"
+    fontFamily: fontFamilies.serifSemiBold
   },
   acceptedMeta: {
     fontSize: 13,

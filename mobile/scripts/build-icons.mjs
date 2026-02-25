@@ -56,6 +56,18 @@ const icons = [
   {
     input: "assets/icons/zoom=out.svg",
     output: "src/icons/ZoomOutHintIcon.tsx"
+  },
+  {
+    input: "assets/icons/Read.svg",
+    output: "src/icons/ReadIcon.tsx"
+  },
+  {
+    input: "assets/icons/Shelves.svg",
+    output: "src/icons/ShelvesIcon.tsx"
+  },
+  {
+    input: "assets/icons/Friends.svg",
+    output: "src/icons/FriendsIcon.tsx"
   }
 ];
 

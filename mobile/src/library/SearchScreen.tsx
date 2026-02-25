@@ -13,7 +13,7 @@ import {
 import { searchBooks } from "../api/booksClient";
 import AcceptBookIcon from "../icons/AcceptBookIcon";
 import { colors } from "../theme/colors";
-import { radius, spacing, typography } from "../theme/tokens";
+import { fontFamilies, radius, spacing, typography } from "../theme/tokens";
 import type { LookupBookItem } from "../types/vision";
 
 type SearchScreenProps = {
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.textPrimary,
     fontSize: typography.h2,
-    fontWeight: "800"
+    fontFamily: fontFamilies.serifBold
   },
   spacer: {
     width: 64

@@ -21,6 +21,7 @@ import SelectCapturesIcon from "../icons/SelectCapturesIcon";
 import SelectNoCapturesIcon from "../icons/SelectNoCapturesIcon";
 import { GuideOverlay } from "../overlay/GuideOverlay";
 import { colors } from "../theme/colors";
+import { fontFamilies } from "../theme/tokens";
 import type { CaptureScanResponse } from "../types/vision";
 
 type CameraScreenProps = {
@@ -688,7 +689,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     color: colors.textPrimary,
-    fontWeight: "700"
+    fontFamily: fontFamilies.serifBold
   },
   helperText: {
     color: colors.textSecondary,

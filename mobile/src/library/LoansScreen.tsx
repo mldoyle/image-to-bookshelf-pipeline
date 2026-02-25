@@ -4,7 +4,7 @@ import Svg, { Path } from "react-native-svg";
 import { AppText, BookCover, Surface } from "../primitives";
 import { resolveBookCoverUri } from "./figmaAssets";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/tokens";
+import { fontFamilies, radius, spacing } from "../theme/tokens";
 import type { LibraryBook } from "../types/library";
 
 type LoansFilter = "all" | "active" | "returned";
@@ -53,7 +53,7 @@ export function LoansScreen({ books, onOpenBook, onToggleLoaned }: LoansScreenPr
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <AppText variant="label" tone="muted">
+        <AppText variant="label" tone="muted" style={styles.headerTitle}>
           Loans
         </AppText>
         <AppText variant="bodySm" tone="muted">
@@ -166,6 +166,9 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.xs
+  },
+  headerTitle: {
+    fontFamily: fontFamilies.serifSemiBold
   },
   filterRow: {
     flexDirection: "row",

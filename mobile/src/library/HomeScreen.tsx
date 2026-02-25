@@ -1,9 +1,12 @@
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import FriendsIcon from "../icons/FriendsIcon";
+import ReadIcon from "../icons/ReadIcon";
+import ShelvesIcon from "../icons/ShelvesIcon";
 import { BookCover, RatingStars, AppText, Surface } from "../primitives";
 import { resolveBookCoverUri } from "./figmaAssets";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/tokens";
+import { fontFamilies, radius, spacing } from "../theme/tokens";
 import type { LibraryBook } from "../types/library";
 
 type HomeScreenProps = {
@@ -28,7 +31,7 @@ export function HomeScreen({ books, onOpenBook, onViewLibrary }: HomeScreenProps
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <AppText variant="label" tone="muted">
+        <AppText variant="label" tone="muted" style={styles.headerTitle}>
           Home
         </AppText>
         <AppText variant="bodySm" tone="muted">
@@ -37,9 +40,9 @@ export function HomeScreen({ books, onOpenBook, onViewLibrary }: HomeScreenProps
       </View>
 
       <View style={styles.statsStack}>
-        <StatCard value={booksReadThisYear} label="Books Read · this year" />
-        <StatCard value={books.length} label="In Library · total" />
-        <StatCard value={loanedCount} label="Books Lent · currently out" />
+        <StatCard value={booksReadThisYear} label="Books Read · this year" icon="read" />
+        <StatCard value={books.length} label="In Library · total" icon="library" />
+        <StatCard value={loanedCount} label="Books Lent · currently out" icon="lent" />
       </View>
 
       <Surface variant="card" style={styles.recentPanel}>
@@ -77,12 +80,15 @@ export function HomeScreen({ books, onOpenBook, onViewLibrary }: HomeScreenProps
 type StatCardProps = {
   value: number;
   label: string;
+  icon: "read" | "library" | "lent";
 };
 
-function StatCard({ value, label }: StatCardProps) {
+function StatCard({ value, label, icon }: StatCardProps) {
   return (
     <Surface variant="card" style={styles.statCard}>
-      <View style={styles.statIcon} />
+      <View style={styles.statIcon}>
+        <StatIcon icon={icon} />
+      </View>
       <View style={styles.statBody}>
         <AppText variant="h3">{value}</AppText>
         <AppText variant="body" tone="muted" style={styles.statLabel}>
@@ -93,6 +99,18 @@ function StatCard({ value, label }: StatCardProps) {
   );
 }
 
+function StatIcon({ icon }: { icon: StatCardProps["icon"] }) {
+  if (icon === "library") {
+    return <ShelvesIcon color={colors.accent} />;
+  }
+
+  if (icon === "read") {
+    return <ReadIcon color={colors.accent} />;
+  }
+
+  return <FriendsIcon color={colors.accent} />;
+}
+
 const styles = StyleSheet.create({
   content: {
     gap: spacing.xl,
@@ -101,6 +119,9 @@ const styles = StyleSheet.create({
   header: {
     gap: spacing.xs,
     paddingHorizontal: spacing.sm
+  },
+  headerTitle: {
+    fontFamily: fontFamilies.serifSemiBold
   },
   statsStack: {
     gap: spacing.md
@@ -114,12 +135,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg
   },
   statIcon: {
-    width: 46,
-    height: 46,
+    width: 56,
+    height: 56,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: "rgba(212,165,116,0.12)"
+    borderColor: "rgba(212,165,116,0.12)",
+    alignItems: "center",
+    justifyContent: "center"
   },
   statBody: {
     gap: 2

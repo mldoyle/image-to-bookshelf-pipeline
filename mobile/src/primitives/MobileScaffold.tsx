@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import { AppText } from "./AppText";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/tokens";
+import { fontFamilies, radius, spacing } from "../theme/tokens";
 
 export type MainTabKey = "home" | "library" | "loans" | "profile";
 
@@ -44,7 +44,7 @@ export function MobileScaffold({
       <View style={styles.topBar}>
         <Pressable style={styles.brand} onPress={() => onTabPress("home")}>
           <ShelfIcon color={colors.accent} />
-          <AppText variant="h3" tone="primary">
+          <AppText variant="h3" tone="primary" style={styles.brandTitle}>
             Shelf
           </AppText>
         </Pressable>
@@ -254,6 +254,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm
+  },
+  brandTitle: {
+    fontFamily: fontFamilies.serifBold
   },
   topActions: {
     flexDirection: "row",

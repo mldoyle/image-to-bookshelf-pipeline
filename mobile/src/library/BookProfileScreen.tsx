@@ -1,6 +1,6 @@
 import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
-import { radius, spacing, typography } from "../theme/tokens";
+import { fontFamilies, radius, spacing, typography } from "../theme/tokens";
 import type { LibraryBook } from "../types/library";
 
 type BookProfileScreenProps = {
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.textPrimary,
     fontSize: typography.h2,
-    fontWeight: "800"
+    fontFamily: fontFamilies.serifBold
   },
   spacer: {
     width: 64
@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
   bookTitle: {
     color: colors.textPrimary,
     fontSize: typography.h2,
-    fontWeight: "900"
+    fontFamily: fontFamilies.serifBold
   },
   bookAuthor: {
     color: colors.textSecondary,
