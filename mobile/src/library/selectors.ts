@@ -1,15 +1,18 @@
 import {
+  DEFAULT_LIBRARY_SORT_MODE,
   DEFAULT_LIBRARY_FILTERS,
   UNKNOWN_GENRE,
   UNKNOWN_YEAR,
   UNRATED,
   type LibraryBook,
-  type LibraryFilters
+  type LibraryFilters,
+  type LibrarySortMode
 } from "../types/library";
 
-const sortByRecentlyAdded = (books: LibraryBook[]): LibraryBook[] =>
+const sortByRecentlyAdded = (books: LibraryBook[], sortMode: LibrarySortMode): LibraryBook[] =>
   [...books].sort((left, right) => {
-    return new Date(right.addedAt).getTime() - new Date(left.addedAt).getTime();
+    const delta = new Date(right.addedAt).getTime() - new Date(left.addedAt).getTime();
+    return sortMode === "recent_asc" ? -delta : delta;
   });
 
 export type LibraryFilterOptions = {
@@ -84,11 +87,10 @@ export const hasActiveFilters = (filters: LibraryFilters): boolean => {
 
 export const selectVisibleLibraryBooks = (
   books: LibraryBook[],
-  filters: LibraryFilters
+  filters: LibraryFilters,
+  sortMode: LibrarySortMode = DEFAULT_LIBRARY_SORT_MODE
 ): LibraryBook[] => {
-  const sorted = sortByRecentlyAdded(books);
-
-  return sorted.filter((book) => {
+  const filtered = books.filter((book) => {
     if (filters.loaned === "loaned" && !book.loaned) {
       return false;
     }
@@ -135,5 +137,6 @@ export const selectVisibleLibraryBooks = (
 
     return true;
   });
-};
 
+  return sortByRecentlyAdded(filtered, sortMode);
+};

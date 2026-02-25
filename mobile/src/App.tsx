@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
+  Alert,
+  Image,
   NativeModules,
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View
@@ -16,7 +18,6 @@ import {
   fetchLibraryBooks,
   patchLibraryBook
 } from "./api/libraryClient";
-import BackIcon from "./icons/BackIcon";
 import { CameraScreen } from "./camera/CameraScreen";
 import { BookProfileScreen } from "./library/BookProfileScreen";
 import { HomeScreen } from "./library/HomeScreen";
@@ -26,19 +27,29 @@ import { ProfileScreen } from "./library/ProfileScreen";
 import { SearchScreen } from "./library/SearchScreen";
 import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
 import { MobileScaffold, type MainTabKey } from "./primitives";
+import { PulsingLoader } from "./primitives/PulsingLoader";
 import {
+  loadLibrarySortMode,
   loadLibraryBooks,
   loadLibraryFilters,
   loadLibraryViewMode,
   saveLibraryBooks,
   saveLibraryFilters,
+  saveLibrarySortMode,
   saveLibraryViewMode
 } from "./library/storage";
 import { BookApprovalStack, type ReviewStackCard } from "./review/BookApprovalStack";
 import { colors } from "./theme/colors";
 import { fontFamilies } from "./theme/tokens";
 import { useAppFonts } from "./utils/fonts";
-import { DEFAULT_LIBRARY_FILTERS, type LibraryBook, type LibraryFilters, type LibraryViewMode } from "./types/library";
+import {
+  DEFAULT_LIBRARY_FILTERS,
+  DEFAULT_LIBRARY_SORT_MODE,
+  type LibraryBook,
+  type LibraryFilters,
+  type LibrarySortMode,
+  type LibraryViewMode
+} from "./types/library";
 import type { CaptureScanResponse, CaptureScanSpine, FeedItem, LookupBookItem } from "./types/vision";
 
 type AppPhase = "library" | "camera" | "results" | "search" | "book_profile";
@@ -66,18 +77,6 @@ type ReviewSummary = {
   total: number;
 };
 
-const TOP_BAR_INSET = 14;
-const TOP_BAR_OFFSET = 52;
-const OVERLAY_BASE = "#55656B";
-const BOTTOM_GRADIENT_STEPS = [
-  "rgba(94, 68, 71, 0.00)",
-  "rgba(109, 92, 95, 0.04)",
-  "rgba(135, 124, 126, 0.08)",
-  "rgba(163, 154, 155, 0.12)",
-  "rgba(195, 190, 190, 0.16)",
-  "rgba(255, 255, 255, 0.20)"
-] as const;
-
 const defaultApiBaseUrl = Platform.select({
   android: "http://10.0.2.2:5001",
   ios: "http://127.0.0.1:5001",
@@ -96,6 +95,13 @@ const reviewDedupeKey = (item: FeedItem): string => {
     return `lookup:${lookupId.toLowerCase()}`;
   }
   return `${normalize(item.title)}::${normalize(item.author)}`;
+};
+
+const normalizeCoverUri = (uri?: string): string | null => {
+  if (!uri) {
+    return null;
+  }
+  return uri.replace(/^http:\/\//i, "https://");
 };
 
 const summarizeReview = (captures: ReviewCaptureState[]): ReviewSummary => {
@@ -306,12 +312,14 @@ export default function App() {
   const [reviewCaptures, setReviewCaptures] = useState<ReviewCaptureState[]>([]);
 
   const [captureSessionCount, setCaptureSessionCount] = useState(0);
-  const [captureSessionSpineCount, setCaptureSessionSpineCount] = useState(0);
+  const [captureQueueState, setCaptureQueueState] = useState({ inFlightCount: 0, queuedCount: 0 });
+  const [resultsScrollEnabled, setResultsScrollEnabled] = useState(true);
   const captureSequenceRef = useRef(0);
 
   const [libraryReady, setLibraryReady] = useState(false);
   const [libraryBooks, setLibraryBooks] = useState<LibraryBook[]>([]);
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>("list");
+  const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>(DEFAULT_LIBRARY_SORT_MODE);
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
   const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null);
 
@@ -320,9 +328,10 @@ export default function App() {
 
     const loadLibraryState = async () => {
       try {
-        const [books, viewMode, filters] = await Promise.all([
+        const [books, viewMode, sortMode, filters] = await Promise.all([
           loadLibraryBooks(),
           loadLibraryViewMode(),
+          loadLibrarySortMode(),
           loadLibraryFilters()
         ]);
 
@@ -330,9 +339,14 @@ export default function App() {
           return;
         }
 
-        setLibraryBooks(books);
+        const normalizedBooks = mergeLibraryBooks([], books);
+        setLibraryBooks(normalizedBooks);
         setLibraryViewMode(viewMode);
+        setLibrarySortMode(sortMode);
         setLibraryFilters(filters);
+        if (normalizedBooks.length !== books.length) {
+          void saveLibraryBooks(normalizedBooks);
+        }
       } finally {
         if (!cancelled) {
           setLibraryReady(true);
@@ -355,7 +369,11 @@ export default function App() {
     let cancelled = false;
 
     const syncLibraryFromBackend = async () => {
-      const cachedBooks = await loadLibraryBooks();
+      const rawCachedBooks = await loadLibraryBooks();
+      const cachedBooks = mergeLibraryBooks([], rawCachedBooks);
+      if (cachedBooks.length !== rawCachedBooks.length) {
+        void saveLibraryBooks(cachedBooks);
+      }
       let merged = cachedBooks;
 
       try {
@@ -395,36 +413,43 @@ export default function App() {
   const reviewSummary = useMemo(() => summarizeReview(reviewCaptures), [reviewCaptures]);
   const acceptedKeys = useMemo(() => getAcceptedKeySet(reviewCaptures), [reviewCaptures]);
   const acceptedItems = useMemo(() => collectAcceptedItems(reviewCaptures), [reviewCaptures]);
+  const pendingCaptureJobs = captureQueueState.inFlightCount + captureQueueState.queuedCount;
+  const reviewTotalWithProcessing = reviewSummary.total + pendingCaptureJobs;
 
-  const activeCaptureIndex = useMemo(
-    () => reviewCaptures.findIndex((capture) => capture.spines.some((spine) => spine.status === "pending")),
-    [reviewCaptures]
-  );
-
-  const activeCapture = useMemo(
-    () => (activeCaptureIndex >= 0 ? reviewCaptures[activeCaptureIndex] : null),
-    [activeCaptureIndex, reviewCaptures]
-  );
-
-  const activeCards = useMemo<ReviewStackCard[]>(() => {
-    if (!activeCapture) {
-      return [];
-    }
-
-    return activeCapture.spines
-      .filter((spine) => spine.status === "pending")
-      .map((spine) => ({
+  const captureSections = useMemo(() => {
+    return reviewCaptures.map((capture) => {
+      const pendingSpines = capture.spines.filter((spine) => spine.status === "pending");
+      const acceptedCount = capture.spines.filter((spine) => spine.status === "accepted").length;
+      const cards: ReviewStackCard[] = pendingSpines.map((spine) => ({
         spineId: spine.id,
         item: spine.candidates[spine.candidateIndex],
-        captureNumber: activeCapture.captureId + 1,
+        captureNumber: capture.captureId + 1,
         candidateIndex: spine.candidateIndex,
         candidateCount: spine.candidates.length,
         hasMoreCandidates:
           findNextUniqueCandidateIndex(spine, spine.candidateIndex + 1, acceptedKeys) !== null
       }));
-  }, [acceptedKeys, activeCapture]);
+
+      const firstAccepted = capture.spines.find(
+        (spine) => spine.status === "accepted" && spine.acceptedItem
+      )?.acceptedItem;
+      const firstPending =
+        pendingSpines.length > 0 ? pendingSpines[0].candidates[pendingSpines[0].candidateIndex] : null;
+
+      return {
+        captureId: capture.captureId,
+        total: capture.spines.length,
+        pendingCount: pendingSpines.length,
+        acceptedCount,
+        cards,
+        previewItem: firstAccepted ?? firstPending ?? null
+      };
+    });
+  }, [acceptedKeys, reviewCaptures]);
 
   const setRecentlyAddedDefaults = useCallback(() => {
+    setLibrarySortMode(DEFAULT_LIBRARY_SORT_MODE);
+    void saveLibrarySortMode(DEFAULT_LIBRARY_SORT_MODE);
     setLibraryFilters(DEFAULT_LIBRARY_FILTERS);
     void saveLibraryFilters(DEFAULT_LIBRARY_FILTERS);
   }, []);
@@ -432,7 +457,8 @@ export default function App() {
   const resetCaptureSession = useCallback(() => {
     captureSequenceRef.current = 0;
     setCaptureSessionCount(0);
-    setCaptureSessionSpineCount(0);
+    setCaptureQueueState({ inFlightCount: 0, queuedCount: 0 });
+    setResultsScrollEnabled(true);
     setReviewCaptures([]);
   }, []);
 
@@ -444,6 +470,18 @@ export default function App() {
   const updateBooks = useCallback((incoming: LibraryBook[]) => {
     if (incoming.length === 0) {
       return;
+    }
+
+    const previewMerged = mergeLibraryBooks(libraryBooks, incoming);
+    const previewAdded = Math.max(0, previewMerged.length - libraryBooks.length);
+    const duplicateCount = Math.max(0, incoming.length - previewAdded);
+    if (duplicateCount > 0) {
+      Alert.alert(
+        "Already in library",
+        duplicateCount === 1
+          ? "That book is already in your library."
+          : `${duplicateCount} books are already in your library.`
+      );
     }
 
     setLibraryBooks((current) => {
@@ -466,7 +504,7 @@ export default function App() {
       .catch(() => {
         // Cache-first behavior: keep local state and retry on next sync cycle.
       });
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, libraryBooks]);
 
   const onToggleLoaned = useCallback((bookId: string) => {
     const currentBook = libraryBooks.find((book) => book.id === bookId);
@@ -514,6 +552,11 @@ export default function App() {
   const onViewModeChange = useCallback((viewMode: LibraryViewMode) => {
     setLibraryViewMode(viewMode);
     void saveLibraryViewMode(viewMode);
+  }, []);
+
+  const onSortModeChange = useCallback((sortMode: LibrarySortMode) => {
+    setLibrarySortMode(sortMode);
+    void saveLibrarySortMode(sortMode);
   }, []);
 
   const onFiltersChange = useCallback((filters: LibraryFilters) => {
@@ -575,7 +618,7 @@ export default function App() {
     });
   }, []);
 
-  const onRejectSpine = useCallback((spineId: string) => {
+  const onRejectCandidate = useCallback((spineId: string) => {
     setReviewCaptures((current) => {
       const acceptedKeySet = getAcceptedKeySet(current);
 
@@ -603,17 +646,43 @@ export default function App() {
     });
   }, []);
 
-  const closeReviewOverlay = useCallback(() => {
-    const acceptedBooks = acceptedItems.map((item) => toLibraryBookFromFeedItem(item));
+  const onSkipSpine = useCallback((spineId: string) => {
+    setReviewCaptures((current) =>
+      current.map((capture) => ({
+        ...capture,
+        spines: capture.spines.map((spine) => {
+          if (spine.id !== spineId || spine.status !== "pending") {
+            return spine;
+          }
+          return {
+            ...spine,
+            status: "rejected"
+          };
+        })
+      }))
+    );
+  }, []);
 
+  const commitAcceptedItems = useCallback(() => {
+    const acceptedBooks = acceptedItems.map((item) => toLibraryBookFromFeedItem(item));
     if (acceptedBooks.length > 0) {
       updateBooks(acceptedBooks);
     }
+  }, [acceptedItems, updateBooks]);
 
+  const closeReviewOverlay = useCallback(() => {
+    commitAcceptedItems();
     resetCaptureSession();
     setRecentlyAddedDefaults();
+    setActiveTab("library");
     setPhase("library");
-  }, [acceptedItems, resetCaptureSession, setRecentlyAddedDefaults, updateBooks]);
+  }, [commitAcceptedItems, resetCaptureSession, setRecentlyAddedDefaults]);
+
+  const onScanMore = useCallback(() => {
+    commitAcceptedItems();
+    resetCaptureSession();
+    setPhase("camera");
+  }, [commitAcceptedItems, resetCaptureSession]);
 
   const appReady = libraryReady && (fontsLoaded || Boolean(fontError));
 
@@ -627,33 +696,163 @@ export default function App() {
     );
   }
 
-  if (phase === "camera") {
+  const resultsOverlay =
+    phase === "results" ? (
+      <View style={styles.overlayScrim}>
+        <SafeAreaView style={styles.resultsScreen}>
+          <View style={styles.resultsTopBar}>
+            <Pressable
+              style={styles.resultsBackButton}
+              onPress={() => {
+                setPhase("camera");
+              }}
+            >
+              <Text style={styles.resultsBackText}>←</Text>
+            </Pressable>
+            <Text style={styles.resultsTopTitle}>Review Books</Text>
+            <Pressable style={styles.resultsDoneButton} onPress={closeReviewOverlay}>
+              <Text style={styles.resultsDoneText}>DONE</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.resultsSummaryWrap}>
+            <Text style={styles.resultsSummaryText}>
+              {reviewSummary.accepted} added • {reviewSummary.rejected} skipped of {reviewTotalWithProcessing}
+            </Text>
+            {pendingCaptureJobs > 0 ? (
+              <View style={styles.resultsProcessingRow}>
+                <PulsingLoader size={14} color={colors.accent} />
+                <Text style={styles.resultsProcessingText}>
+                  Processing {pendingCaptureJobs} capture{pendingCaptureJobs === 1 ? "" : "s"}...
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.resultsContent}
+            scrollEnabled={resultsScrollEnabled}
+            showsVerticalScrollIndicator={false}
+          >
+            {captureSections.map((capture) => {
+              const collapsed = capture.pendingCount === 0;
+              const coverUri = normalizeCoverUri(
+                capture.previewItem?.metadata?.imageLinks?.thumbnail ??
+                  capture.previewItem?.metadata?.imageLinks?.smallThumbnail
+              );
+
+              return (
+                <View key={`capture-${capture.captureId}`} style={styles.captureSection}>
+                  <View style={styles.captureHeaderRow}>
+                    <View style={styles.captureHeaderLeft}>
+                      <View style={styles.captureBullet} />
+                      <Text style={styles.captureHeaderText}>
+                        Scan {capture.captureId + 1} · {capture.total} books
+                      </Text>
+                    </View>
+                    <Text style={styles.captureHeaderStatus}>
+                      {collapsed ? `${capture.acceptedCount} added` : `${capture.pendingCount} left`}
+                    </Text>
+                  </View>
+
+                  {collapsed ? (
+                    <View style={styles.captureCollapsedRow}>
+                      <View style={styles.captureCollapsedLeft}>
+                        <View style={styles.captureDonePill}>
+                          <Text style={styles.captureDoneText}>✓</Text>
+                        </View>
+                        <Text style={styles.captureCollapsedText}>
+                          {capture.acceptedCount > 0 ? `${capture.acceptedCount} added` : "Skipped"}
+                        </Text>
+                      </View>
+                      {coverUri ? <Image source={{ uri: coverUri }} style={styles.capturePreviewThumb} /> : null}
+                    </View>
+                  ) : (
+                    <View style={styles.captureStackWrap}>
+                      <BookApprovalStack
+                        cards={capture.cards}
+                        onApprove={onApproveSpine}
+                        onRejectCandidate={onRejectCandidate}
+                        onSkipSpine={onSkipSpine}
+                        onSwipeStateChange={(isSwiping) => {
+                          setResultsScrollEnabled(!isSwiping);
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+
+            {pendingCaptureJobs > 0
+              ? Array.from({ length: pendingCaptureJobs }).map((_, index) => (
+                  <View key={`processing-capture-${index}`} style={styles.captureSection}>
+                    <View style={styles.captureHeaderRow}>
+                      <View style={styles.captureHeaderLeft}>
+                        <View style={styles.captureBullet} />
+                        <Text style={styles.captureHeaderText}>Processing capture</Text>
+                      </View>
+                      <Text style={styles.captureHeaderStatus}>…</Text>
+                    </View>
+                    <View style={styles.processingCaptureCard}>
+                      <PulsingLoader size={34} color={colors.accent} />
+                    </View>
+                  </View>
+                ))
+              : null}
+
+            {reviewSummary.pending === 0 && pendingCaptureJobs === 0 ? (
+              <View style={styles.allDoneWrap}>
+                <View style={styles.allDoneIcon}>
+                  <Text style={styles.allDoneIconText}>✓</Text>
+                </View>
+                <Text style={styles.allDoneTitle}>All done!</Text>
+                <Text style={styles.allDoneSubtitle}>{reviewSummary.accepted} books added to your library</Text>
+                <View style={styles.allDoneActions}>
+                  <Pressable style={styles.scanMoreButton} onPress={onScanMore}>
+                    <Text style={styles.scanMoreText}>Scan More</Text>
+                  </Pressable>
+                  <Pressable style={styles.backToLibraryButton} onPress={closeReviewOverlay}>
+                    <Text style={styles.backToLibraryText}>Back to library</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </View>
+    ) : null;
+
+  if (phase === "camera" || phase === "results") {
     return (
       <>
         <StatusBar style="light" />
-        <CameraScreen
-          apiBaseUrl={apiBaseUrl}
-          reviewEnabled={captureSessionCount > 0}
-          onBack={() => {
-            resetCaptureSession();
-            setPhase("library");
-          }}
-          onOpenReview={() => {
-            setActiveTab("library");
-            setPhase("results");
-          }}
-          onCaptureProcessed={(capture: CaptureScanResponse) => {
-            const captureId = captureSequenceRef.current;
-            captureSequenceRef.current += 1;
+        <View style={styles.cameraPhaseRoot}>
+          <CameraScreen
+            apiBaseUrl={apiBaseUrl}
+            reviewEnabled={captureSessionCount > 0}
+            onBack={() => {
+              resetCaptureSession();
+              setPhase("library");
+            }}
+            onOpenReview={() => {
+              setResultsScrollEnabled(true);
+              setPhase("results");
+            }}
+            onCaptureProcessed={(capture: CaptureScanResponse) => {
+              const captureId = captureSequenceRef.current;
+              captureSequenceRef.current += 1;
 
-            setReviewCaptures((current) => {
-              const seenCandidateKeys = collectCandidateKeys(current);
-              return [...current, buildReviewCapture(capture, captureId, seenCandidateKeys)];
-            });
-            setCaptureSessionCount((count) => count + 1);
-            setCaptureSessionSpineCount((count) => count + capture.spines.length);
-          }}
-        />
+              setReviewCaptures((current) => {
+                const seenCandidateKeys = collectCandidateKeys(current);
+                return [...current, buildReviewCapture(capture, captureId, seenCandidateKeys)];
+              });
+              setCaptureSessionCount((count) => count + 1);
+            }}
+            onLookupQueueStateChange={setCaptureQueueState}
+          />
+          {resultsOverlay}
+        </View>
       </>
     );
   }
@@ -714,7 +913,10 @@ export default function App() {
             <LibraryScreen
               books={libraryBooks}
               viewMode={libraryViewMode}
+              sortMode={librarySortMode}
               filters={libraryFilters}
+              onSortModeChange={onSortModeChange}
+              onFiltersChange={onFiltersChange}
               onViewModeChange={onViewModeChange}
               onToggleLoaned={onToggleLoaned}
               onOpenBook={(book) => {
@@ -744,67 +946,16 @@ export default function App() {
           ) : null}
         </MobileScaffold>
       </View>
-
-      {phase === "results" ? (
-        <View style={styles.overlayScrim}>
-          <View pointerEvents="none" style={styles.bottomGradient}>
-            {BOTTOM_GRADIENT_STEPS.map((color, index) => (
-              <View key={`${color}-${index}`} style={[styles.bottomGradientStep, { backgroundColor: color }]} />
-            ))}
-          </View>
-
-          <SafeAreaView style={styles.resultsScreen}>
-            <Pressable
-              style={[styles.topIconButton, styles.resultsBackButton]}
-              onPress={() => {
-                closeReviewOverlay();
-              }}
-            >
-              <BackIcon color={OVERLAY_BASE} />
-            </Pressable>
-
-            <View style={styles.resultsContent}>
-              <View style={styles.headerBlock}>
-                <Text style={styles.title}>Adding {captureSessionSpineCount} books to library</Text>
-              </View>
-
-              {activeCards.length > 0 ? (
-                <View style={styles.stackWrap}>
-                  <BookApprovalStack
-                    cards={activeCards}
-                    onApprove={onApproveSpine}
-                    onReject={onRejectSpine}
-                  />
-                </View>
-              ) : (
-                <View style={styles.doneWrap}>
-                  <Text style={styles.doneTitle}>All done!</Text>
-                  <Text style={styles.subtitle}>Accepted {reviewSummary.accepted} books.</Text>
-
-                  <FlatList
-                    data={acceptedItems}
-                    keyExtractor={(item) => item.id}
-                    style={styles.acceptedList}
-                    contentContainerStyle={styles.acceptedListContent}
-                    renderItem={({ item }) => (
-                      <View style={styles.acceptedItem}>
-                        <Text style={styles.acceptedTitle}>{item.title}</Text>
-                        <Text style={styles.acceptedMeta}>{item.author}</Text>
-                      </View>
-                    )}
-                  />
-                </View>
-              )}
-            </View>
-          </SafeAreaView>
-        </View>
-      ) : null}
     </>
   );
 }
 
 const styles = StyleSheet.create({
   mainSafeArea: {
+    flex: 1,
+    backgroundColor: colors.background
+  },
+  cameraPhaseRoot: {
     flex: 1,
     backgroundColor: colors.background
   },
@@ -821,97 +972,215 @@ const styles = StyleSheet.create({
   },
   overlayScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: OVERLAY_BASE
-  },
-  bottomGradient: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: "36%"
-  },
-  bottomGradientStep: {
-    flex: 1
+    backgroundColor: "#171B2B",
+    zIndex: 60
   },
   resultsScreen: {
-    flex: 1
+    flex: 1,
+    backgroundColor: "#171B2B"
+  },
+  resultsTopBar: {
+    height: 52,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(212,165,116,0.1)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12
   },
   resultsBackButton: {
-    position: "absolute",
-    top: TOP_BAR_OFFSET,
-    left: TOP_BAR_INSET
-  },
-  topIconButton: {
-    width: 44,
-    height: 44,
+    width: 28,
+    height: 28,
     alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 22,
-    backgroundColor: colors.white,
-    zIndex: 30
+    justifyContent: "center"
+  },
+  resultsBackText: {
+    color: colors.textPrimary,
+    fontSize: 18
+  },
+  resultsTopTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamilies.serifRegular,
+    fontSize: 15
+  },
+  resultsDoneButton: {
+    minWidth: 38,
+    alignItems: "flex-end"
+  },
+  resultsDoneText: {
+    color: colors.accent,
+    fontSize: 12,
+    letterSpacing: 0.3
+  },
+  resultsSummaryWrap: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(212,165,116,0.07)"
+  },
+  resultsSummaryText: {
+    color: "rgba(245,237,224,0.72)",
+    fontSize: 12
+  },
+  resultsProcessingRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7
+  },
+  resultsProcessingText: {
+    color: colors.textSecondary,
+    fontSize: 12
   },
   resultsContent: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 110,
-    paddingBottom: 16
+    paddingHorizontal: 10,
+    paddingBottom: 24,
+    gap: 10
   },
-  headerBlock: {
-    backgroundColor: "rgba(255, 255, 255, 0.14)",
-    borderRadius: 14,
+  captureSection: {
+    gap: 6
+  },
+  captureStackWrap: {
+    marginTop: 4
+  },
+  captureHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  captureHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  captureBullet: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.accent
+  },
+  captureHeaderText: {
+    color: colors.textSecondary,
+    fontSize: 13
+  },
+  captureHeaderStatus: {
+    color: colors.textMuted,
+    fontSize: 12
+  },
+  captureCollapsedRow: {
+    height: 40,
+    borderRadius: 2,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.35)",
-    padding: 14,
-    gap: 6,
-    marginBottom: 12
+    borderColor: "rgba(212,165,116,0.12)",
+    backgroundColor: "rgba(46,52,72,0.72)",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
   },
-  title: {
-    fontSize: 24,
-    fontFamily: fontFamilies.serifBold,
-    color: colors.white
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.white
-  },
-  stackWrap: {
-    flex: 1
-  },
-  doneWrap: {
-    flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.14)",
-    borderRadius: 18,
+  processingCaptureCard: {
+    height: 278,
+    borderRadius: 3,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.35)",
-    padding: 14,
-    gap: 12
+    borderColor: "rgba(212,165,116,0.16)",
+    backgroundColor: "rgba(46,52,72,0.56)",
+    alignItems: "center",
+    justifyContent: "center"
   },
-  doneTitle: {
-    fontSize: 24,
-    fontFamily: fontFamilies.serifBold,
-    color: colors.white
+  captureCollapsedLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
   },
-  acceptedList: {
-    flex: 1
-  },
-  acceptedListContent: {
-    gap: 8,
-    paddingBottom: 12
-  },
-  acceptedItem: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
+  captureDonePill: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(142,149,168,0.24)",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.35)"
+    borderColor: "rgba(212,165,116,0.2)"
   },
-  acceptedTitle: {
-    fontSize: 16,
-    color: colors.white,
-    fontFamily: fontFamilies.serifSemiBold
+  captureDoneText: {
+    color: colors.textSecondary,
+    fontSize: 11
   },
-  acceptedMeta: {
+  captureCollapsedText: {
+    color: colors.textSecondary,
+    fontSize: 13
+  },
+  capturePreviewThumb: {
+    width: 32,
+    height: 22,
+    borderRadius: 1,
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.22)"
+  },
+  allDoneWrap: {
+    marginTop: 6,
+    borderRadius: 2,
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.14)",
+    backgroundColor: "rgba(46,52,72,0.36)",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    gap: 8
+  },
+  allDoneIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(142,149,168,0.24)",
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.24)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  allDoneIconText: {
+    color: colors.textSecondary,
+    fontSize: 20
+  },
+  allDoneTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamilies.serifRegular,
+    fontSize: 20
+  },
+  allDoneSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13
+  },
+  allDoneActions: {
+    marginTop: 4,
+    flexDirection: "row",
+    gap: 8
+  },
+  scanMoreButton: {
+    minWidth: 104,
+    height: 34,
+    borderRadius: 2,
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent"
+  },
+  scanMoreText: {
+    color: colors.textSecondary,
+    fontSize: 13
+  },
+  backToLibraryButton: {
+    minWidth: 122,
+    height: 34,
+    borderRadius: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accent
+  },
+  backToLibraryText: {
+    color: "#3D2C19",
     fontSize: 13,
-    color: colors.white
+    fontWeight: "600"
   }
 });

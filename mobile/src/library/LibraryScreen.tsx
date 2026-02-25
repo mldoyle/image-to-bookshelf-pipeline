@@ -3,25 +3,49 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { AppText, Surface } from "../primitives";
 import { LibraryGridItem } from "./components/LibraryGridItem";
 import { LibraryListItem } from "./components/LibraryListItem";
-import { selectVisibleLibraryBooks } from "./selectors";
+import { FilterBar } from "./components/FilterBar";
+import { deriveLibraryFilterOptions, selectVisibleLibraryBooks } from "./selectors";
 import { colors } from "../theme/colors";
 import { fontFamilies, radius, spacing } from "../theme/tokens";
-import type { LibraryBook, LibraryFilters, LibraryViewMode } from "../types/library";
+import {
+  DEFAULT_LIBRARY_FILTERS,
+  type LibraryBook,
+  type LibraryFilters,
+  type LibrarySortMode,
+  type LibraryViewMode
+} from "../types/library";
 
 type LibraryCategory = "read" | "reviews";
 
 type LibraryScreenProps = {
   books: LibraryBook[];
   viewMode: LibraryViewMode;
+  sortMode: LibrarySortMode;
   filters: LibraryFilters;
+  onSortModeChange: (sortMode: LibrarySortMode) => void;
+  onFiltersChange: (filters: LibraryFilters) => void;
   onViewModeChange: (mode: LibraryViewMode) => void;
   onToggleLoaned: (bookId: string) => void;
   onOpenBook: (book: LibraryBook) => void;
 };
 
-export function LibraryScreen({ books, viewMode, filters, onViewModeChange, onToggleLoaned, onOpenBook }: LibraryScreenProps) {
+export function LibraryScreen({
+  books,
+  viewMode,
+  sortMode,
+  filters,
+  onSortModeChange,
+  onFiltersChange,
+  onViewModeChange,
+  onToggleLoaned,
+  onOpenBook
+}: LibraryScreenProps) {
   const [category, setCategory] = useState<LibraryCategory>("read");
-  const visibleBooks = useMemo(() => selectVisibleLibraryBooks(books, filters), [books, filters]);
+  const visibleBooks = useMemo(
+    () => selectVisibleLibraryBooks(books, filters, sortMode),
+    [books, filters, sortMode]
+  );
+  const filterOptions = useMemo(() => deriveLibraryFilterOptions(books), [books]);
   const loanedCount = useMemo(() => books.filter((book) => book.loaned).length, [books]);
 
   return (
@@ -35,6 +59,13 @@ export function LibraryScreen({ books, viewMode, filters, onViewModeChange, onTo
         </AppText>
       </View>
 
+      <FilterBar
+        filters={filters}
+        options={filterOptions}
+        onFiltersChange={onFiltersChange}
+        onClearFilters={() => onFiltersChange(DEFAULT_LIBRARY_FILTERS)}
+      />
+
       <Surface variant="card" style={styles.panel}>
         <View style={styles.panelTopRow}>
           <View style={styles.categoryRow}>
@@ -46,23 +77,36 @@ export function LibraryScreen({ books, viewMode, filters, onViewModeChange, onTo
             />
           </View>
 
-          <View style={styles.viewToggle}>
+          <View style={styles.controlsRow}>
             <Pressable
-              style={[styles.viewButton, viewMode === "grid" && styles.viewButtonActive]}
-              onPress={() => onViewModeChange("grid")}
+              style={styles.sortButton}
+              onPress={() =>
+                onSortModeChange(sortMode === "recent_desc" ? "recent_asc" : "recent_desc")
+              }
             >
-              <AppText variant="caption" tone={viewMode === "grid" ? "inverse" : "muted"}>
-                ▦
+              <AppText variant="caption" tone="muted" style={styles.sortButtonText}>
+                {sortMode === "recent_desc" ? "↓" : "↑"}
               </AppText>
             </Pressable>
-            <Pressable
-              style={[styles.viewButton, viewMode === "list" && styles.viewButtonActive]}
-              onPress={() => onViewModeChange("list")}
-            >
-              <AppText variant="caption" tone={viewMode === "list" ? "inverse" : "muted"}>
-                ≣
-              </AppText>
-            </Pressable>
+
+            <View style={styles.viewToggle}>
+              <Pressable
+                style={[styles.viewButton, viewMode === "grid" && styles.viewButtonActive]}
+                onPress={() => onViewModeChange("grid")}
+              >
+                <AppText variant="caption" tone={viewMode === "grid" ? "inverse" : "muted"}>
+                  ▦
+                </AppText>
+              </Pressable>
+              <Pressable
+                style={[styles.viewButton, viewMode === "list" && styles.viewButtonActive]}
+                onPress={() => onViewModeChange("list")}
+              >
+                <AppText variant="caption" tone={viewMode === "list" ? "inverse" : "muted"}>
+                  ≣
+                </AppText>
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -75,15 +119,15 @@ export function LibraryScreen({ books, viewMode, filters, onViewModeChange, onTo
           </View>
         ) : viewMode === "grid" ? (
           <ScrollView contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false}>
-            {visibleBooks.map((book) => (
-              <LibraryGridItem key={book.id} book={book} onOpenBook={onOpenBook} />
+            {visibleBooks.map((book, index) => (
+              <LibraryGridItem key={`grid-${book.id}-${index}`} book={book} onOpenBook={onOpenBook} />
             ))}
           </ScrollView>
         ) : (
           <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-            {visibleBooks.map((book) => (
+            {visibleBooks.map((book, index) => (
               <LibraryListItem
-                key={book.id}
+                key={`list-${book.id}-${index}`}
                 book={book}
                 onOpenBook={onOpenBook}
                 onToggleLoaned={onToggleLoaned}
@@ -154,6 +198,25 @@ const styles = StyleSheet.create({
   viewToggle: {
     flexDirection: "row",
     gap: 4
+  },
+  controlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  sortButton: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceElevated
+  },
+  sortButtonText: {
+    fontSize: 14,
+    lineHeight: 14
   },
   viewButton: {
     width: 34,

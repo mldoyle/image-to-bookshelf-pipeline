@@ -1,7 +1,9 @@
 import {
+  DEFAULT_LIBRARY_SORT_MODE,
   DEFAULT_LIBRARY_FILTERS,
   type LibraryBook,
   type LibraryFilters,
+  type LibrarySortMode,
   type LibraryViewMode
 } from "../types/library";
 
@@ -10,6 +12,7 @@ declare const require: undefined | ((id: string) => unknown);
 const BOOKS_KEY = "bookshelf.library.v1.books";
 const VIEW_MODE_KEY = "bookshelf.library.v1.viewMode";
 const FILTERS_KEY = "bookshelf.library.v1.filters";
+const SORT_MODE_KEY = "bookshelf.library.v1.sortMode";
 
 type AsyncStorageLike = {
   getItem: (key: string) => Promise<string | null>;
@@ -63,7 +66,8 @@ const parseJson = <T>(raw: string | null): T | null => {
 export const libraryStorageKeys = {
   books: BOOKS_KEY,
   viewMode: VIEW_MODE_KEY,
-  filters: FILTERS_KEY
+  filters: FILTERS_KEY,
+  sortMode: SORT_MODE_KEY
 } as const;
 
 export const loadLibraryBooks = async (): Promise<LibraryBook[]> => {
@@ -102,6 +106,18 @@ export const loadLibraryViewMode = async (): Promise<LibraryViewMode> => {
 
 export const saveLibraryViewMode = async (viewMode: LibraryViewMode): Promise<void> => {
   await asyncStorage.setItem(VIEW_MODE_KEY, viewMode);
+};
+
+export const loadLibrarySortMode = async (): Promise<LibrarySortMode> => {
+  const raw = await asyncStorage.getItem(SORT_MODE_KEY);
+  if (raw === "recent_asc") {
+    return "recent_asc";
+  }
+  return DEFAULT_LIBRARY_SORT_MODE;
+};
+
+export const saveLibrarySortMode = async (sortMode: LibrarySortMode): Promise<void> => {
+  await asyncStorage.setItem(SORT_MODE_KEY, sortMode);
 };
 
 const asNumberOrNull = (value: unknown): number | null =>

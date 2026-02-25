@@ -22,7 +22,7 @@ const icons = [
     output: "src/icons/BackIcon.tsx"
   },
   {
-    input: "assets/icons/Property 1=captures.svg",
+    input: "assets/icons/select-books.svg",
     output: "src/icons/SelectCapturesIcon.tsx"
   },
   {
@@ -34,7 +34,7 @@ const icons = [
     output: "src/icons/AcceptBookIcon.tsx"
   },
   {
-    input: "assets/icons/decline-book.svg",
+    input: "assets/icons/reject-book.svg",
     output: "src/icons/DeclineBookIcon.tsx"
   },
   {

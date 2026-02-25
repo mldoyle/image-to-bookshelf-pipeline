@@ -31,7 +31,7 @@ Also implemented:
 ## 2) Current constraints
 
 1. Authentication is still deferred.
-- `/library/me/*` resolves to a dev identity fallback unless headers are provided.
+- `/library/me/*` resolves to a dev identity fallback unless headers are provided. #This sounds like it could cause a security problem later
 - Supported override headers:
   - `X-Bookshelf-User-Email`
   - `X-Bookshelf-Username`

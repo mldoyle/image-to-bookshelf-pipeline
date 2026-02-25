@@ -12,6 +12,7 @@ import {
 import AcceptBookIcon from "../icons/AcceptBookIcon";
 import DeclineBookIcon from "../icons/DeclineBookIcon";
 import { colors } from "../theme/colors";
+import { fontFamilies } from "../theme/tokens";
 import type { FeedItem } from "../types/vision";
 
 export type ReviewStackCard = {
@@ -26,7 +27,9 @@ export type ReviewStackCard = {
 type BookApprovalStackProps = {
   cards: ReviewStackCard[];
   onApprove: (spineId: string) => void;
-  onReject: (spineId: string) => void;
+  onRejectCandidate: (spineId: string) => void;
+  onSkipSpine: (spineId: string) => void;
+  onSwipeStateChange?: (isSwiping: boolean) => void;
 };
 
 type SwipeDecisionCardProps = {
@@ -34,16 +37,16 @@ type SwipeDecisionCardProps = {
   depth: number;
   isTop: boolean;
   onApprove: (spineId: string) => void;
-  onReject: (spineId: string) => void;
+  onRejectCandidate: (spineId: string) => void;
+  onSkipSpine: (spineId: string) => void;
+  onSwipeStateChange?: (isSwiping: boolean) => void;
 };
 
-const MAX_VISIBLE_CARDS = 4;
-const CARD_OFFSET = 9;
-const SWIPE_THRESHOLD = 105;
-const EXIT_DISTANCE = Dimensions.get("window").width * 1.1;
-
-const formatSource = (source: FeedItem["source"]): string =>
-  source === "lookup" ? "Google Books" : "OCR fallback";
+const MAX_VISIBLE_CARDS = 3;
+const CARD_OFFSET = 8;
+const SWIPE_THRESHOLD = 72;
+const SWIPE_VELOCITY_THRESHOLD = 0.34;
+const EXIT_DISTANCE = Dimensions.get("window").width * 1.08;
 
 const normalizeCoverUri = (uri?: string): string | undefined => {
   if (!uri) {
@@ -52,10 +55,19 @@ const normalizeCoverUri = (uri?: string): string | undefined => {
   return uri.replace(/^http:\/\//i, "https://");
 };
 
-function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDecisionCardProps) {
+function SwipeDecisionCard({
+  card,
+  depth,
+  isTop,
+  onApprove,
+  onRejectCandidate,
+  onSkipSpine,
+  onSwipeStateChange
+}: SwipeDecisionCardProps) {
   const pan = useRef(new Animated.ValueXY()).current;
-  const animatingRef = useRef(false);
   const flipScaleX = useRef(new Animated.Value(1)).current;
+  const animatingRef = useRef(false);
+  const swipeActiveRef = useRef(false);
   const [displayCard, setDisplayCard] = useState(card);
 
   useEffect(() => {
@@ -68,48 +80,42 @@ function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDec
       return;
     }
 
-    Animated.timing(flipScaleX, {
-      toValue: 0,
-      duration: 115,
-      useNativeDriver: true
-    }).start(({ finished }) => {
-      if (!finished) {
-        return;
-      }
-      setDisplayCard(card);
+    Animated.sequence([
+      Animated.timing(flipScaleX, {
+        toValue: 0,
+        duration: 105,
+        useNativeDriver: true
+      }),
       Animated.timing(flipScaleX, {
         toValue: 1,
-        duration: 115,
+        duration: 125,
         useNativeDriver: true
-      }).start();
-    });
+      })
+    ]).start();
+    setDisplayCard(card);
   }, [card, displayCard.item.id, flipScaleX, isTop]);
 
   const rotation = pan.x.interpolate({
     inputRange: [-220, 0, 220],
-    outputRange: ["-14deg", "0deg", "14deg"],
-    extrapolate: "clamp"
-  });
-
-  const approveOpacity = pan.x.interpolate({
-    inputRange: [0, 90, 180],
-    outputRange: [0, 0.7, 1],
-    extrapolate: "clamp"
-  });
-
-  const rejectOpacity = pan.x.interpolate({
-    inputRange: [-180, -90, 0],
-    outputRange: [1, 0.7, 0],
+    outputRange: ["-7deg", "0deg", "7deg"],
     extrapolate: "clamp"
   });
 
   const settleToCenter = () => {
     Animated.spring(pan, {
       toValue: { x: 0, y: 0 },
-      tension: 52,
-      friction: 8,
+      tension: 68,
+      friction: 7,
       useNativeDriver: true
     }).start();
+  };
+
+  const setSwipeActive = (isSwiping: boolean) => {
+    if (swipeActiveRef.current === isSwiping) {
+      return;
+    }
+    swipeActiveRef.current = isSwiping;
+    onSwipeStateChange?.(isSwiping);
   };
 
   const approve = () => {
@@ -120,12 +126,12 @@ function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDec
     Animated.parallel([
       Animated.timing(pan.x, {
         toValue: EXIT_DISTANCE,
-        duration: 220,
+        duration: 200,
         useNativeDriver: true
       }),
       Animated.timing(pan.y, {
         toValue: 0,
-        duration: 220,
+        duration: 200,
         useNativeDriver: true
       })
     ]).start(() => {
@@ -135,77 +141,88 @@ function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDec
     });
   };
 
-  const reject = () => {
+  const skipSpine = () => {
     if (!isTop || animatingRef.current) {
       return;
     }
     animatingRef.current = true;
-
-    if (card.hasMoreCandidates) {
-      Animated.sequence([
-        Animated.timing(pan.x, {
-          toValue: -42,
-          duration: 95,
-          useNativeDriver: true
-        }),
-        Animated.spring(pan.x, {
-          toValue: 0,
-          tension: 55,
-          friction: 8,
-          useNativeDriver: true
-        })
-      ]).start(() => {
-        pan.setValue({ x: 0, y: 0 });
-        animatingRef.current = false;
-        onReject(card.spineId);
-      });
-      return;
-    }
-
     Animated.parallel([
       Animated.timing(pan.x, {
         toValue: -EXIT_DISTANCE,
-        duration: 220,
+        duration: 200,
         useNativeDriver: true
       }),
       Animated.timing(pan.y, {
         toValue: 0,
-        duration: 220,
+        duration: 200,
         useNativeDriver: true
       })
     ]).start(() => {
       pan.setValue({ x: 0, y: 0 });
       animatingRef.current = false;
-      onReject(card.spineId);
+      onSkipSpine(card.spineId);
     });
+  };
+
+  const rejectCandidate = () => {
+    if (!isTop || animatingRef.current) {
+      return;
+    }
+    animatingRef.current = true;
+    onRejectCandidate(card.spineId);
+    setTimeout(() => {
+      animatingRef.current = false;
+    }, 180);
   };
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, gestureState) =>
+        onMoveShouldSetPanResponder: (_event, gestureState) => {
+          const shouldSet =
+            isTop &&
+            !animatingRef.current &&
+            Math.abs(gestureState.dx) > 6 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15;
+          if (shouldSet) {
+            setSwipeActive(true);
+          }
+          return shouldSet;
+        },
+        onMoveShouldSetPanResponderCapture: (_event, gestureState) =>
           isTop &&
           !animatingRef.current &&
           Math.abs(gestureState.dx) > 6 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderMove: (_event, gestureState) => {
-          pan.setValue({ x: gestureState.dx, y: gestureState.dy * 0.12 });
+          pan.setValue({ x: gestureState.dx, y: gestureState.dy * 0.1 });
         },
         onPanResponderRelease: (_event, gestureState) => {
-          if (gestureState.dx > SWIPE_THRESHOLD) {
+          setSwipeActive(false);
+          if (gestureState.dx > SWIPE_THRESHOLD || gestureState.vx > SWIPE_VELOCITY_THRESHOLD) {
             approve();
             return;
           }
-          if (gestureState.dx < -SWIPE_THRESHOLD) {
-            reject();
+          if (gestureState.dx < -SWIPE_THRESHOLD || gestureState.vx < -SWIPE_VELOCITY_THRESHOLD) {
+            skipSpine();
             return;
           }
           settleToCenter();
         },
-        onPanResponderTerminate: settleToCenter
+        onPanResponderTerminate: () => {
+          setSwipeActive(false);
+          settleToCenter();
+        }
       }),
-    [approve, isTop, pan, reject]
+    [approve, isTop, onSwipeStateChange, pan, skipSpine]
   );
+
+  useEffect(() => {
+    return () => {
+      setSwipeActive(false);
+    };
+  }, []);
 
   const coverUri = normalizeCoverUri(
     displayCard.item.metadata?.imageLinks?.thumbnail ?? displayCard.item.metadata?.imageLinks?.smallThumbnail
@@ -217,10 +234,10 @@ function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDec
       style={[
         styles.cardContainer,
         {
-          top: depth * CARD_OFFSET,
-          left: depth * CARD_OFFSET,
-          right: depth * CARD_OFFSET,
-          bottom: depth * CARD_OFFSET,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
           zIndex: MAX_VISIBLE_CARDS - depth
         },
         isTop
@@ -232,7 +249,12 @@ function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDec
                 { scaleX: flipScaleX }
               ]
             }
-          : null
+          : {
+              transform: [
+                { translateX: depth * CARD_OFFSET },
+                { translateY: -depth * 3 }
+              ]
+            }
       ]}
       {...(isTop ? panResponder.panHandlers : {})}
     >
@@ -245,109 +267,97 @@ function SwipeDecisionCard({ card, depth, isTop, onApprove, onReject }: SwipeDec
               <Text style={styles.placeholderText}>NO COVER</Text>
             </View>
           )}
-          <View style={styles.coverTint} />
-        </View>
 
-        <View style={[styles.cardContent, isTop ? styles.cardContentTopCard : null]}>
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {displayCard.item.title}
-          </Text>
-          <Text style={styles.cardAuthor} numberOfLines={1}>
-            {displayCard.item.author}
-          </Text>
-          <Text style={styles.cardMeta}>
-            {formatSource(displayCard.item.source)} | confidence {displayCard.item.confidence.toFixed(3)}
-          </Text>
-          {displayCard.candidateCount > 1 ? (
-            <Text style={styles.cardMeta}>
-              match {displayCard.candidateIndex + 1} of {displayCard.candidateCount}
+          <View style={styles.coverShade} />
+
+          <View style={styles.metaOverlay}>
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {displayCard.item.title}
             </Text>
+            <Text style={styles.cardAuthor} numberOfLines={1}>
+              {displayCard.item.author}
+            </Text>
+          </View>
+
+          {displayCard.candidateCount > 1 ? (
+            <View style={styles.candidatePill}>
+              <Text style={styles.candidateText}>
+                {displayCard.candidateIndex + 1}/{displayCard.candidateCount}
+              </Text>
+            </View>
+          ) : null}
+
+          {isTop ? (
+            <View style={styles.actionRow}>
+              <Pressable style={[styles.actionButton, styles.rejectButton]} onPress={rejectCandidate}>
+                <DeclineBookIcon width={16} height={16} color="#F8EBE0" />
+              </Pressable>
+              <Pressable style={[styles.actionButton, styles.approveButton]} onPress={approve}>
+                <AcceptBookIcon width={16} height={16} color="#2E3448" />
+              </Pressable>
+            </View>
           ) : null}
         </View>
-
-        {isTop ? (
-          <>
-            <View style={styles.captureBadge}>
-              <Text style={styles.captureBadgeText}>{displayCard.captureNumber}</Text>
-            </View>
-
-            <Animated.View style={[styles.decisionPill, styles.rejectPill, { opacity: rejectOpacity }]}>
-              <Text style={styles.decisionPillText}>DISAPPROVE</Text>
-            </Animated.View>
-            <Animated.View style={[styles.decisionPill, styles.approvePill, { opacity: approveOpacity }]}>
-              <Text style={styles.decisionPillText}>APPROVE</Text>
-            </Animated.View>
-
-            <View style={styles.actionRow}>
-              <Pressable onPress={reject} style={[styles.actionButton, styles.rejectButton]}>
-                <DeclineBookIcon width={30} height={30} color="#55656B" />
-              </Pressable>
-              <Pressable onPress={approve} style={[styles.actionButton, styles.approveButton]}>
-                <AcceptBookIcon width={30} height={30} color="#55656B" />
-              </Pressable>
-            </View>
-          </>
-        ) : null}
       </View>
     </Animated.View>
   );
 }
 
-export function BookApprovalStack({ cards, onApprove, onReject }: BookApprovalStackProps) {
+export function BookApprovalStack({
+  cards,
+  onApprove,
+  onRejectCandidate,
+  onSkipSpine,
+  onSwipeStateChange
+}: BookApprovalStackProps) {
   const visibleCards = cards.slice(0, MAX_VISIBLE_CARDS);
   const renderOrder = [...visibleCards].reverse();
 
   return (
-    <View style={styles.stackWrap}>
-      <View style={styles.stackFrame}>
-        {renderOrder.map((card, reverseIndex) => {
-          const depth = visibleCards.length - reverseIndex - 1;
-          return (
-            <SwipeDecisionCard
-              key={card.spineId}
-              card={card}
-              depth={depth}
-              isTop={depth === 0}
-              onApprove={onApprove}
-              onReject={onReject}
-            />
-          );
-        })}
-      </View>
-      <Text style={styles.hintText}>Swipe right to approve, left to disapprove.</Text>
+    <View style={styles.stackFrame}>
+      {renderOrder.map((card, reverseIndex) => {
+        const depth = visibleCards.length - reverseIndex - 1;
+        return (
+          <SwipeDecisionCard
+            key={card.spineId}
+            card={card}
+            depth={depth}
+            isTop={depth === 0}
+            onApprove={onApprove}
+            onRejectCandidate={onRejectCandidate}
+            onSkipSpine={onSkipSpine}
+            onSwipeStateChange={onSwipeStateChange}
+          />
+        );
+      })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stackWrap: {
-    flex: 1,
-    gap: 14
-  },
   stackFrame: {
-    flex: 1,
-    minHeight: 420
+    height: 278,
+    position: "relative"
   },
   cardContainer: {
     position: "absolute"
   },
   cardSurface: {
     flex: 1,
-    borderRadius: 24,
+    borderRadius: 3,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(212,165,116,0.22)",
     overflow: "hidden",
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: colors.surface,
     shadowColor: colors.black,
-    shadowOpacity: 0.28,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 16,
-    elevation: 5
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 12,
+    elevation: 4
   },
   coverWrap: {
-    flex: 1.05,
-    backgroundColor: colors.surfaceMuted,
-    position: "relative"
+    flex: 1,
+    backgroundColor: colors.surfaceMuted
   },
   coverImage: {
     width: "100%",
@@ -356,112 +366,81 @@ const styles = StyleSheet.create({
   coverPlaceholder: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceMuted
+    justifyContent: "center"
   },
   placeholderText: {
     color: colors.textMuted,
-    fontWeight: "700",
-    letterSpacing: 1
+    fontSize: 12,
+    letterSpacing: 0.7
   },
-  coverTint: {
+  coverShade: {
     position: "absolute",
     left: 0,
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.18)"
+    backgroundColor: "rgba(15,18,29,0.22)"
   },
-  cardContent: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    gap: 5
-  },
-  cardContentTopCard: {
-    paddingBottom: 96
+  metaOverlay: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    bottom: 34,
+    gap: 1
   },
   cardTitle: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: colors.textPrimary
+    color: colors.textPrimary,
+    fontFamily: fontFamilies.serifRegular,
+    fontSize: 18,
+    lineHeight: 20
   },
   cardAuthor: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.textSecondary
+    color: "rgba(245,237,224,0.84)",
+    fontSize: 15,
+    lineHeight: 18
   },
-  cardMeta: {
-    fontSize: 13,
-    color: colors.textMuted
-  },
-  decisionPill: {
+  candidatePill: {
     position: "absolute",
-    top: 20,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 2
-  },
-  approvePill: {
-    right: 18,
-    borderColor: "#34c759",
-    backgroundColor: "rgba(52, 199, 89, 0.92)"
-  },
-  rejectPill: {
-    left: 18,
-    borderColor: "#ff5e57",
-    backgroundColor: "rgba(255, 94, 87, 0.92)"
-  },
-  decisionPillText: {
-    color: colors.white,
-    fontWeight: "800",
-    letterSpacing: 0.5
-  },
-  captureBadge: {
-    position: "absolute",
-    top: 18,
-    alignSelf: "center",
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    right: 8,
+    top: 8,
+    minWidth: 36,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 7,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.white
+    backgroundColor: "rgba(20,23,34,0.68)",
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.24)"
   },
-  captureBadgeText: {
-    color: "#55656B",
-    fontWeight: "800",
-    fontSize: 14
+  candidateText: {
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: "700"
   },
   actionRow: {
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 14,
+    bottom: 8,
     flexDirection: "row",
     justifyContent: "center",
-    gap: 18
+    gap: 8
   },
   actionButton: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    borderWidth: 2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.white
+    borderWidth: 1
   },
   rejectButton: {
-    borderColor: colors.white
+    backgroundColor: "#C45B5B",
+    borderColor: "rgba(244,196,189,0.55)"
   },
   approveButton: {
-    borderColor: colors.white
-  },
-  hintText: {
-    textAlign: "center",
-    color: colors.textMuted,
-    fontSize: 13
+    backgroundColor: colors.accent,
+    borderColor: "rgba(20,23,34,0.35)"
   }
 });

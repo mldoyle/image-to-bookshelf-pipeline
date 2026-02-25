@@ -5,6 +5,7 @@ export const UNRATED = "Rating Unrated";
 export type LibraryBookSource = "scan" | "search";
 export type LibraryViewMode = "list" | "grid";
 export type LoanedFilter = "all" | "loaned" | "not_loaned";
+export type LibrarySortMode = "recent_desc" | "recent_asc";
 
 export type LibraryBook = {
   id: string;
@@ -40,3 +41,5 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   includeUnrated: false,
   loaned: "all"
 };
+
+export const DEFAULT_LIBRARY_SORT_MODE: LibrarySortMode = "recent_desc";

@@ -134,13 +134,21 @@ export const mergeLibraryBooks = (
   existingBooks: LibraryBook[],
   incomingBooks: LibraryBook[]
 ): LibraryBook[] => {
-  const byKey = new Map<string, LibraryBook>();
-
-  existingBooks.forEach((book) => {
-    byKey.set(dedupeKey(book), book);
+  const byId = new Map<string, LibraryBook>();
+  [...existingBooks, ...incomingBooks].forEach((book) => {
+    const normalizedId = book.id.trim() || createBookId();
+    const normalizedBook = normalizedId === book.id ? book : { ...book, id: normalizedId };
+    const existing = byId.get(normalizedId);
+    if (!existing) {
+      byId.set(normalizedId, normalizedBook);
+      return;
+    }
+    byId.set(normalizedId, choosePreferredBook(existing, normalizedBook));
   });
 
-  incomingBooks.forEach((book) => {
+  const byKey = new Map<string, LibraryBook>();
+
+  Array.from(byId.values()).forEach((book) => {
     const key = dedupeKey(book);
     const existing = byKey.get(key);
     if (!existing) {

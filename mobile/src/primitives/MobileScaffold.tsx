@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import { AppText } from "./AppText";
 import { colors } from "../theme/colors";
-import { fontFamilies, radius, spacing } from "../theme/tokens";
+import { fontFamilies, spacing } from "../theme/tokens";
 
 export type MainTabKey = "home" | "library" | "loans" | "profile";
 
@@ -42,7 +42,13 @@ export function MobileScaffold({
       <GlowBackdrop />
 
       <View style={styles.topBar}>
-        <Pressable style={styles.brand} onPress={() => onTabPress("home")}>
+        <Pressable
+          style={styles.brand}
+          onPress={() => {
+            setAddMenuOpen(false);
+            onTabPress("home");
+          }}
+        >
           <ShelfIcon color={colors.accent} />
           <AppText variant="h3" tone="primary" style={styles.brandTitle}>
             Shelf
@@ -65,45 +71,60 @@ export function MobileScaffold({
       <View style={styles.content}>{children}</View>
 
       <View style={styles.bottomWrap}>
+        <View style={styles.bottomBar}>
+          {tabs.slice(0, 2).map((tab) => (
+            <TabItem
+              key={tab.key}
+              tab={tab.key}
+              label={tab.label}
+              activeTab={activeTab}
+              onPress={(nextTab) => {
+                setAddMenuOpen(false);
+                onTabPress(nextTab);
+              }}
+            />
+          ))}
+          <View style={styles.addSpacer} />
+          {tabs.slice(2).map((tab) => (
+            <TabItem
+              key={tab.key}
+              tab={tab.key}
+              label={tab.label}
+              activeTab={activeTab}
+              onPress={(nextTab) => {
+                setAddMenuOpen(false);
+                onTabPress(nextTab);
+              }}
+            />
+          ))}
+        </View>
+
         {addMenuOpen ? (
-          <View style={styles.addMenu}>
-            <Pressable
-              style={styles.addMenuButton}
+          <View style={styles.quickActionsRow}>
+            <QuickActionButton
+              label="SEARCH"
               onPress={() => {
                 setAddMenuOpen(false);
                 onSearchPress();
               }}
-            >
-              <AppText variant="label" tone="inverse">
-                Search
-              </AppText>
-            </Pressable>
-            <Pressable
-              style={styles.addMenuButton}
+              icon={<SearchActionIcon color={colors.background} />}
+            />
+            <QuickActionButton
+              label="SCAN"
               onPress={() => {
                 setAddMenuOpen(false);
                 onCameraPress();
               }}
-            >
-              <AppText variant="label" tone="inverse">
-                Camera
-              </AppText>
-            </Pressable>
+              icon={<ScanActionIcon color={colors.background} />}
+            />
           </View>
         ) : null}
 
-        <View style={styles.bottomBar}>
-          {tabs.slice(0, 2).map((tab) => (
-            <TabItem key={tab.key} tab={tab.key} label={tab.label} activeTab={activeTab} onPress={onTabPress} />
-          ))}
-          <View style={styles.addSpacer} />
-          {tabs.slice(2).map((tab) => (
-            <TabItem key={tab.key} tab={tab.key} label={tab.label} activeTab={activeTab} onPress={onTabPress} />
-          ))}
-        </View>
-
-        <Pressable style={styles.addButton} onPress={() => setAddMenuOpen((open) => !open)}>
-          <PlusIcon color={colors.background} />
+        <Pressable
+          style={[styles.addButton, addMenuOpen && styles.addButtonOpen]}
+          onPress={() => setAddMenuOpen((open) => !open)}
+        >
+          <PlusIcon color={addMenuOpen ? colors.textPrimary : colors.background} open={addMenuOpen} />
         </Pressable>
         <AppText variant="caption" tone="muted" style={styles.addLabel}>
           ADD
@@ -223,11 +244,51 @@ function ProfileIcon({ color }: { color: string }) {
   );
 }
 
-function PlusIcon({ color }: { color: string }) {
+function PlusIcon({ color, open }: { color: string; open: boolean }) {
   return (
     <Svg width={26} height={26} fill="none" viewBox="0 0 24 24">
-      <Path d="M12 5v14M5 12h14" stroke={color} strokeLinecap="round" strokeWidth={2} />
+      {open ? (
+        <Path d="m6 6 12 12M18 6 6 18" stroke={color} strokeLinecap="round" strokeWidth={2.2} />
+      ) : (
+        <Path d="M12 5v14M5 12h14" stroke={color} strokeLinecap="round" strokeWidth={2} />
+      )}
     </Svg>
+  );
+}
+
+function SearchActionIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} fill="none" viewBox="0 0 24 24">
+      <Circle cx={11} cy={11} r={6.5} stroke={color} strokeWidth={1.8} />
+      <Path d="m16 16 4 4" stroke={color} strokeLinecap="round" strokeWidth={1.8} />
+    </Svg>
+  );
+}
+
+function ScanActionIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} fill="none" viewBox="0 0 24 24">
+      <Rect x={4} y={5} width={16} height={14} rx={2.4} stroke={color} strokeWidth={1.8} />
+      <Circle cx={12} cy={12} r={3.2} stroke={color} strokeWidth={1.8} />
+      <Path d="M8 5.5 9.8 3h4.4L16 5.5" stroke={color} strokeLinecap="round" strokeWidth={1.8} />
+    </Svg>
+  );
+}
+
+type QuickActionButtonProps = {
+  label: string;
+  icon: ReactNode;
+  onPress: () => void;
+};
+
+function QuickActionButton({ label, icon, onPress }: QuickActionButtonProps) {
+  return (
+    <Pressable style={styles.quickActionWrap} onPress={onPress}>
+      <View style={styles.quickActionCircle}>{icon}</View>
+      <AppText variant="caption" tone="primary" style={styles.quickActionLabel}>
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -351,25 +412,39 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6
   },
-  addMenu: {
-    position: "absolute",
-    bottom: 74,
-    alignItems: "center",
-    gap: spacing.xs
-  },
-  addMenuButton: {
-    minWidth: 132,
-    height: 40,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center"
+  addButtonOpen: {
+    backgroundColor: "#5A5A5A",
+    borderColor: "rgba(0,0,0,0.22)"
   },
   addLabel: {
     position: "absolute",
     bottom: 8,
     letterSpacing: 0.5
+  },
+  quickActionsRow: {
+    position: "absolute",
+    bottom: 56,
+    width: 170,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  quickActionWrap: {
+    alignItems: "center",
+    gap: 6
+  },
+  quickActionCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.accent,
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.8)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  quickActionLabel: {
+    fontSize: 10,
+    letterSpacing: 0.4
   }
 });

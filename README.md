@@ -51,7 +51,7 @@ Equivalent module command:
 
 ```bash
 source .venv/bin/activate
-python -m bookshelf_scanner.web_api --host localhost --port 5001
+python -m bookshelf_scanner.web_api --host 0.0.0.0  --port 5001
 ```
 
 For LAN/mobile device access, bind all interfaces:
