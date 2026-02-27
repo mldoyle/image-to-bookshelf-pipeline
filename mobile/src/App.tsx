@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   NativeModules,
@@ -26,8 +25,7 @@ import { LoansScreen } from "./library/LoansScreen";
 import { ProfileScreen } from "./library/ProfileScreen";
 import { SearchScreen } from "./library/SearchScreen";
 import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
-import { MobileScaffold, type MainTabKey } from "./primitives";
-import { PulsingLoader } from "./primitives/PulsingLoader";
+import { BookTurnerAnimation, MobileScaffold, type MainTabKey } from "./primitives";
 import {
   loadLibrarySortMode,
   loadLibraryBooks,
@@ -690,7 +688,7 @@ export default function App() {
     return (
       <SafeAreaView style={styles.loadingScreen}>
         <StatusBar style="light" />
-        <ActivityIndicator color={colors.accent} />
+        <BookTurnerAnimation size={164} speed={1.02} />
         <Text style={styles.loadingText}>Loading app...</Text>
       </SafeAreaView>
     );
@@ -721,7 +719,7 @@ export default function App() {
             </Text>
             {pendingCaptureJobs > 0 ? (
               <View style={styles.resultsProcessingRow}>
-                <PulsingLoader size={14} color={colors.accent} />
+                <BookTurnerAnimation size={20} speed={0.98} />
                 <Text style={styles.resultsProcessingText}>
                   Processing {pendingCaptureJobs} capture{pendingCaptureJobs === 1 ? "" : "s"}...
                 </Text>
@@ -795,7 +793,7 @@ export default function App() {
                       <Text style={styles.captureHeaderStatus}>…</Text>
                     </View>
                     <View style={styles.processingCaptureCard}>
-                      <PulsingLoader size={34} color={colors.accent} />
+                      <BookTurnerAnimation size={52} speed={0.98} />
                     </View>
                   </View>
                 ))
