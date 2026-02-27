@@ -177,3 +177,111 @@ def test_library_book_patch_and_delete(tmp_path):
 
     list_response = client.get("/library/me/books")
     assert list_response.get_json()["count"] == 0
+
+
+def test_library_profile_patch_and_fetch(tmp_path):
+    client = _build_test_client(tmp_path / "library-profile.db")
+
+    patch_response = client.patch(
+        "/library/me/profile",
+        json={
+            "displayName": "Jordan Diaz",
+            "bio": "Reading every day.",
+            "location": "Brooklyn, NY",
+            "website": "jordanreads.blog",
+            "badge": "PATRON",
+        },
+    )
+    assert patch_response.status_code == 200
+    profile = patch_response.get_json()["profile"]
+    assert profile["displayName"] == "Jordan Diaz"
+    assert profile["bio"] == "Reading every day."
+    assert profile["location"] == "Brooklyn, NY"
+    assert profile["website"] == "jordanreads.blog"
+    assert profile["badge"] == "PATRON"
+
+    get_response = client.get("/library/me/profile")
+    assert get_response.status_code == 200
+    assert get_response.get_json()["profile"]["displayName"] == "Jordan Diaz"
+
+
+def test_library_friends_crud(tmp_path):
+    client = _build_test_client(tmp_path / "library-friends.db")
+
+    create_response = client.post(
+        "/library/me/friends",
+        json={
+            "name": "Sarah Mitchell",
+            "email": "sarah@example.com",
+        },
+    )
+    assert create_response.status_code == 201
+    created = create_response.get_json()["item"]
+    assert created["name"] == "Sarah Mitchell"
+    assert created["initials"] == "SM"
+
+    list_response = client.get("/library/me/friends")
+    assert list_response.status_code == 200
+    assert list_response.get_json()["count"] == 1
+
+    patch_response = client.patch(
+        f"/library/me/friends/{created['id']}",
+        json={"status": "blocked"},
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.get_json()["item"]["status"] == "blocked"
+
+    delete_response = client.delete(f"/library/me/friends/{created['id']}")
+    assert delete_response.status_code == 200
+
+    assert client.get("/library/me/friends").get_json()["count"] == 0
+
+
+def test_library_loans_workflow(tmp_path):
+    client = _build_test_client(tmp_path / "library-loans.db")
+
+    add_book_response = client.post(
+        "/library/me/books",
+        json={
+            "title": "Dune",
+            "author": "Frank Herbert",
+            "publishedYear": 1965,
+            "genres": ["Science Fiction"],
+            "googleBooksId": "dune-loan-gid",
+        },
+    )
+    assert add_book_response.status_code == 201
+    added_book = add_book_response.get_json()["item"]
+
+    add_friend_response = client.post(
+        "/library/me/friends",
+        json={"name": "James Kim"},
+    )
+    assert add_friend_response.status_code == 201
+    friend = add_friend_response.get_json()["item"]
+
+    create_loan_response = client.post(
+        "/library/me/loans",
+        json={
+            "userBookId": added_book["id"],
+            "friendId": friend["id"],
+            "dueDate": "2026-03-15T00:00:00+00:00",
+        },
+    )
+    assert create_loan_response.status_code == 201
+    loan = create_loan_response.get_json()["item"]
+    assert loan["status"] == "active"
+    assert loan["borrowerName"] == "James Kim"
+
+    books_after_loan = client.get("/library/me/books").get_json()["items"]
+    assert books_after_loan[0]["loaned"] is True
+
+    patch_loan_response = client.patch(
+        f"/library/me/loans/{loan['id']}",
+        json={"status": "returned"},
+    )
+    assert patch_loan_response.status_code == 200
+    assert patch_loan_response.get_json()["item"]["status"] == "returned"
+
+    books_after_return = client.get("/library/me/books").get_json()["items"]
+    assert books_after_return[0]["loaned"] is False

@@ -14,8 +14,15 @@ import {
 import { StatusBar } from "expo-status-bar";
 import {
   batchUpsertLibraryBooks,
+  createLoan,
+  fetchFriends,
   fetchLibraryBooks,
-  patchLibraryBook
+  fetchLoans,
+  fetchProfile,
+  patchLibraryBook,
+  patchLoan,
+  patchProfile,
+  upsertFriend
 } from "./api/libraryClient";
 import { CameraScreen } from "./camera/CameraScreen";
 import { BookProfileScreen } from "./library/BookProfileScreen";
@@ -24,6 +31,8 @@ import { LibraryScreen } from "./library/LibraryScreen";
 import { LoansScreen } from "./library/LoansScreen";
 import { ProfileScreen } from "./library/ProfileScreen";
 import { SearchScreen } from "./library/SearchScreen";
+import { SettingsScreen } from "./library/SettingsScreen";
+import type { NewLoanSubmitPayload } from "./library/components/NewLoanSheet";
 import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
 import { BookTurnerAnimation, MobileScaffold, type MainTabKey } from "./primitives";
 import {
@@ -44,13 +53,16 @@ import {
   DEFAULT_LIBRARY_FILTERS,
   DEFAULT_LIBRARY_SORT_MODE,
   type LibraryBook,
+  type LibraryFriend,
   type LibraryFilters,
+  type LibraryLoan,
   type LibrarySortMode,
-  type LibraryViewMode
+  type LibraryViewMode,
+  type UserProfile
 } from "./types/library";
 import type { CaptureScanResponse, CaptureScanSpine, FeedItem, LookupBookItem } from "./types/vision";
 
-type AppPhase = "library" | "camera" | "results" | "search" | "book_profile";
+type AppPhase = "library" | "camera" | "results" | "search" | "book_profile" | "settings";
 type ReviewSpineStatus = "pending" | "accepted" | "rejected";
 
 type ReviewSpineState = {
@@ -295,6 +307,9 @@ export default function App() {
   });
   const metroHost = resolveMetroHost();
   const resolvedDefaultApiBaseUrl = useMemo(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      return `${window.location.protocol}//${window.location.hostname}:5001`;
+    }
     if (Platform.OS === "android") {
       return defaultApiBaseUrl ?? "http://10.0.2.2:5001";
     }
@@ -319,7 +334,22 @@ export default function App() {
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>("list");
   const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>(DEFAULT_LIBRARY_SORT_MODE);
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
-  const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [libraryFriends, setLibraryFriends] = useState<LibraryFriend[]>([]);
+  const [libraryLoans, setLibraryLoans] = useState<LibraryLoan[]>([]);
+  const cameraEnabled = Platform.OS !== "web";
+
+  const selectedBook = useMemo(
+    () => (selectedBookId ? libraryBooks.find((book) => book.id === selectedBookId) ?? null : null),
+    [libraryBooks, selectedBookId]
+  );
+
+  useEffect(() => {
+    if (phase === "book_profile" && !selectedBook) {
+      setPhase("library");
+    }
+  }, [phase, selectedBook]);
 
   useEffect(() => {
     let cancelled = false;
@@ -391,13 +421,35 @@ export default function App() {
       try {
         const syncedBooks = await batchUpsertLibraryBooks(apiBaseUrl, merged, 12000);
         if (cancelled || syncedBooks.length === 0) {
-          return;
+          // Continue into profile/friends/loans sync even when book batch is empty.
+        } else {
+          const next = mergeLibraryBooks(merged, syncedBooks);
+          setLibraryBooks(next);
+          void saveLibraryBooks(next);
+          merged = next;
         }
-        const next = mergeLibraryBooks(merged, syncedBooks);
-        setLibraryBooks(next);
-        void saveLibraryBooks(next);
       } catch {
         // Local cache remains valid; next successful sync will reconcile.
+      }
+
+      const [profileResult, friendsResult, loansResult] = await Promise.allSettled([
+        fetchProfile(apiBaseUrl, 12000),
+        fetchFriends(apiBaseUrl, 12000),
+        fetchLoans(apiBaseUrl, { timeoutMs: 12000 }),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (profileResult.status === "fulfilled") {
+        setUserProfile(profileResult.value);
+      }
+      if (friendsResult.status === "fulfilled") {
+        setLibraryFriends(friendsResult.value);
+      }
+      if (loansResult.status === "fulfilled") {
+        setLibraryLoans(loansResult.value);
       }
     };
 
@@ -461,9 +513,13 @@ export default function App() {
   }, []);
 
   const startCameraSession = useCallback(() => {
+    if (!cameraEnabled) {
+      Alert.alert("Camera unavailable", "Camera scan is currently available on native iOS/Android only.");
+      return;
+    }
     resetCaptureSession();
     setPhase("camera");
-  }, [resetCaptureSession]);
+  }, [cameraEnabled, resetCaptureSession]);
 
   const updateBooks = useCallback((incoming: LibraryBook[]) => {
     if (incoming.length === 0) {
@@ -504,7 +560,10 @@ export default function App() {
       });
   }, [apiBaseUrl, libraryBooks]);
 
-  const onToggleLoaned = useCallback((bookId: string) => {
+  const onPatchBook = useCallback(async (
+    bookId: string,
+    patch: Partial<Pick<LibraryBook, "loaned" | "liked" | "reread" | "review" | "rating" | "synopsis" | "pageCount">>
+  ) => {
     const currentBook = libraryBooks.find((book) => book.id === bookId);
     if (!currentBook) {
       return;
@@ -512,7 +571,7 @@ export default function App() {
 
     const updatedBook: LibraryBook = {
       ...currentBook,
-      loaned: !currentBook.loaned
+      ...patch
     };
 
     setLibraryBooks((current) => {
@@ -521,31 +580,103 @@ export default function App() {
       return next;
     });
 
-    void patchLibraryBook(apiBaseUrl, bookId, { loaned: updatedBook.loaned }, 10000)
-      .then((syncedBook) => {
+    try {
+      const syncedBook = await patchLibraryBook(apiBaseUrl, bookId, patch, 10000);
+      setLibraryBooks((current) => {
+        const merged = mergeLibraryBooks(current, [syncedBook]);
+        void saveLibraryBooks(merged);
+        return merged;
+      });
+    } catch {
+      try {
+        const syncedBooks = await batchUpsertLibraryBooks(apiBaseUrl, [updatedBook], 12000);
+        if (syncedBooks.length === 0) {
+          return;
+        }
         setLibraryBooks((current) => {
-          const merged = mergeLibraryBooks(current, [syncedBook]);
+          const merged = mergeLibraryBooks(current, syncedBooks);
           void saveLibraryBooks(merged);
           return merged;
         });
-      })
-      .catch(() => {
-        void batchUpsertLibraryBooks(apiBaseUrl, [updatedBook], 12000)
-          .then((syncedBooks) => {
-            if (syncedBooks.length === 0) {
-              return;
-            }
-            setLibraryBooks((current) => {
-              const merged = mergeLibraryBooks(current, syncedBooks);
-              void saveLibraryBooks(merged);
-              return merged;
-            });
-          })
-          .catch(() => {
-            // Cache-first behavior: keep local state and retry on later sync.
-          });
-      });
+      } catch {
+        // Cache-first behavior: keep local state and retry on later sync.
+      }
+    }
   }, [apiBaseUrl, libraryBooks]);
+
+  const onCreateLoan = useCallback(async (payload: NewLoanSubmitPayload) => {
+    let resolvedFriendId = payload.friendId;
+    const borrowerName = payload.borrowerName.trim();
+    if (!borrowerName) {
+      throw new Error("missing_borrower_name");
+    }
+
+    if (!resolvedFriendId) {
+      try {
+        const createdFriend = await upsertFriend(apiBaseUrl, { name: borrowerName, email: null }, 12000);
+        resolvedFriendId = createdFriend.id;
+        setLibraryFriends((current) => {
+          const byId = new Map(current.map((friend) => [friend.id, friend]));
+          byId.set(createdFriend.id, createdFriend);
+          return Array.from(byId.values()).sort((left, right) => left.name.localeCompare(right.name));
+        });
+      } catch {
+        // Loan can still be created without a persisted friend row.
+      }
+    }
+
+    const createdLoan = await createLoan(
+      apiBaseUrl,
+      {
+        userBookId: payload.userBookId,
+        friendId: resolvedFriendId,
+        borrowerName,
+        dueDate: payload.noReturnDate ? null : payload.dueDate,
+      },
+      12000
+    );
+
+    setLibraryLoans((current) => {
+      const next = [createdLoan, ...current.filter((loan) => loan.id !== createdLoan.id)];
+      return next;
+    });
+    setLibraryBooks((current) => {
+      const merged = mergeLibraryBooks(current, [createdLoan.book]);
+      void saveLibraryBooks(merged);
+      return merged;
+    });
+
+    try {
+      const refreshedProfile = await fetchProfile(apiBaseUrl, 10000);
+      setUserProfile(refreshedProfile);
+    } catch {
+      // Profile can lag until next refresh cycle.
+    }
+  }, [apiBaseUrl]);
+
+  const onMarkLoanReturned = useCallback(async (loanId: string) => {
+    const updatedLoan = await patchLoan(apiBaseUrl, loanId, { status: "returned" }, 12000);
+    setLibraryLoans((current) => current.map((loan) => (loan.id === loanId ? updatedLoan : loan)));
+    setLibraryBooks((current) => {
+      const merged = mergeLibraryBooks(current, [updatedLoan.book]);
+      void saveLibraryBooks(merged);
+      return merged;
+    });
+
+    try {
+      const refreshedProfile = await fetchProfile(apiBaseUrl, 10000);
+      setUserProfile(refreshedProfile);
+    } catch {
+      // Profile can lag until next refresh cycle.
+    }
+  }, [apiBaseUrl]);
+
+  const onSaveProfile = useCallback(async (
+    patch: Partial<Pick<UserProfile, "displayName" | "bio" | "location" | "website" | "badge" | "avatarUrl">>
+  ) => {
+    const nextProfile = await patchProfile(apiBaseUrl, patch, 12000);
+    setUserProfile(nextProfile);
+  }, [apiBaseUrl]);
 
   const onViewModeChange = useCallback((viewMode: LibraryViewMode) => {
     setLibraryViewMode(viewMode);
@@ -876,6 +1007,11 @@ export default function App() {
         <StatusBar style="light" />
         <BookProfileScreen
           book={selectedBook}
+          books={libraryBooks}
+          friends={libraryFriends}
+          loans={libraryLoans}
+          onPatchBook={onPatchBook}
+          onCreateLoan={onCreateLoan}
           onBack={() => {
             setPhase("library");
           }}
@@ -890,24 +1026,44 @@ export default function App() {
       <View style={styles.mainSafeArea}>
         <MobileScaffold
           activeTab={activeTab}
-          onTabPress={setActiveTab}
+          onTabPress={(tab) => {
+            setPhase("library");
+            setActiveTab(tab);
+          }}
           onSearchPress={() => setPhase("search")}
           onCameraPress={startCameraSession}
+          cameraEnabled={cameraEnabled}
           onBellPress={() => {}}
-          onAvatarPress={() => setActiveTab("profile")}
+          onAvatarPress={() => {
+            setPhase("library");
+            setActiveTab("profile");
+          }}
+          onSettingsPress={() => {
+            setPhase("settings");
+          }}
+          onLogoutPress={() => {
+            Alert.alert("Logged out", "Sign-out wiring is not connected yet.");
+          }}
         >
-          {activeTab === "home" ? (
+          {phase === "settings" ? (
+            <SettingsScreen apiBaseUrl={apiBaseUrl} onApiBaseUrlChange={setApiBaseUrl} />
+          ) : null}
+
+          {phase !== "settings" && activeTab === "home" ? (
             <HomeScreen
               books={libraryBooks}
               onOpenBook={(book) => {
-                setSelectedBook(book);
+                setSelectedBookId(book.id);
                 setPhase("book_profile");
               }}
-              onViewLibrary={() => setActiveTab("library")}
+              onViewLibrary={() => {
+                setPhase("library");
+                setActiveTab("library");
+              }}
             />
           ) : null}
 
-          {activeTab === "library" ? (
+          {phase !== "settings" && activeTab === "library" ? (
             <LibraryScreen
               books={libraryBooks}
               viewMode={libraryViewMode}
@@ -916,30 +1072,33 @@ export default function App() {
               onSortModeChange={onSortModeChange}
               onFiltersChange={onFiltersChange}
               onViewModeChange={onViewModeChange}
-              onToggleLoaned={onToggleLoaned}
               onOpenBook={(book) => {
-                setSelectedBook(book);
+                setSelectedBookId(book.id);
                 setPhase("book_profile");
               }}
             />
           ) : null}
 
-          {activeTab === "loans" ? (
+          {phase !== "settings" && activeTab === "loans" ? (
             <LoansScreen
               books={libraryBooks}
-              onToggleLoaned={onToggleLoaned}
+              loans={libraryLoans}
+              friends={libraryFriends}
+              onCreateLoan={onCreateLoan}
+              onMarkReturned={onMarkLoanReturned}
               onOpenBook={(book) => {
-                setSelectedBook(book);
+                setSelectedBookId(book.id);
                 setPhase("book_profile");
               }}
             />
           ) : null}
 
-          {activeTab === "profile" ? (
+          {phase !== "settings" && activeTab === "profile" ? (
             <ProfileScreen
+              profile={userProfile}
               books={libraryBooks}
-              apiBaseUrl={apiBaseUrl}
-              onApiBaseUrlChange={setApiBaseUrl}
+              friends={libraryFriends}
+              onSaveProfile={onSaveProfile}
             />
           ) : null}
         </MobileScaffold>

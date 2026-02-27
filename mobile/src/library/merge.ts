@@ -11,6 +11,13 @@ const normalizeText = (value: string): string =>
 const asNumberOrNull = (value: number | undefined): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
+const asIntegerOrNull = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  return null;
+};
+
 export const parsePublishedYear = (publishedDate: string | undefined): number | null => {
   if (!publishedDate) {
     return null;
@@ -54,48 +61,71 @@ const toAuthorLine = (authors: string[] | undefined, fallback: string): string =
   return fallback.trim() || "Unknown author";
 };
 
+const withBookDefaults = (book: LibraryBook): LibraryBook => ({
+  ...book,
+  liked: Boolean(book.liked),
+  reread: Boolean(book.reread),
+  publishedDate: book.publishedDate || null,
+  pageCount: typeof book.pageCount === "number" && Number.isFinite(book.pageCount) ? Math.round(book.pageCount) : null,
+  synopsis: typeof book.synopsis === "string" ? book.synopsis : null,
+  infoLink: typeof book.infoLink === "string" ? book.infoLink : null,
+});
+
 export const toLibraryBookFromLookupItem = (
   lookupItem: LookupBookItem,
   source: LibraryBookSource,
   fallback?: Pick<LibraryBook, "title" | "author">
-): LibraryBook => ({
-  id: createBookId(),
-  title: lookupItem.title?.trim() || fallback?.title || "Untitled",
-  author: toAuthorLine(lookupItem.authors, fallback?.author || "Unknown author"),
-  publishedYear: parsePublishedYear(lookupItem.publishedDate),
-  genres: sanitizeGenres(lookupItem.categories),
-  rating: asNumberOrNull(lookupItem.averageRating),
-  review: null,
-  coverThumbnail: lookupItem.imageLinks?.thumbnail || lookupItem.imageLinks?.smallThumbnail || null,
-  loaned: false,
-  addedAt: new Date().toISOString(),
-  source,
-  googleBooksId: lookupItem.id?.trim() || null
-});
+): LibraryBook =>
+  withBookDefaults({
+    id: createBookId(),
+    title: lookupItem.title?.trim() || fallback?.title || "Untitled",
+    author: toAuthorLine(lookupItem.authors, fallback?.author || "Unknown author"),
+    publishedYear: parsePublishedYear(lookupItem.publishedDate),
+    publishedDate: lookupItem.publishedDate || null,
+    genres: sanitizeGenres(lookupItem.categories),
+    rating: asNumberOrNull(lookupItem.averageRating),
+    review: null,
+    coverThumbnail: lookupItem.imageLinks?.thumbnail || lookupItem.imageLinks?.smallThumbnail || null,
+    loaned: false,
+    liked: false,
+    reread: false,
+    addedAt: new Date().toISOString(),
+    source,
+    googleBooksId: lookupItem.id?.trim() || null,
+    pageCount: asIntegerOrNull((lookupItem as { pageCount?: number }).pageCount),
+    synopsis: lookupItem.descriptionSnippet || null,
+    infoLink: lookupItem.infoLink || null,
+  });
 
 export const toLibraryBookFromFeedItem = (item: FeedItem): LibraryBook => {
   const metadata = item.metadata;
   if (metadata) {
     return toLibraryBookFromLookupItem(metadata, "scan", {
       title: item.title,
-      author: item.author
+      author: item.author,
     });
   }
 
-  return {
+  return withBookDefaults({
     id: createBookId(),
     title: item.title.trim() || "Untitled",
     author: item.author.trim() || "Unknown author",
     publishedYear: null,
+    publishedDate: null,
     genres: [],
     rating: null,
     review: null,
     coverThumbnail: null,
     loaned: false,
+    liked: false,
+    reread: false,
     addedAt: new Date().toISOString(),
     source: "scan",
-    googleBooksId: null
-  };
+    googleBooksId: null,
+    pageCount: null,
+    synopsis: null,
+    infoLink: null,
+  });
 };
 
 const dedupeKey = (book: Pick<LibraryBook, "googleBooksId" | "title" | "author" | "publishedYear">): string => {
@@ -109,25 +139,28 @@ const choosePreferredBook = (existing: LibraryBook, incoming: LibraryBook): Libr
   const existingScore =
     (existing.coverThumbnail ? 1 : 0) +
     (existing.genres.length > 0 ? 1 : 0) +
-    (existing.rating !== null ? 1 : 0);
+    (existing.rating !== null ? 1 : 0) +
+    (existing.synopsis ? 1 : 0);
   const incomingScore =
     (incoming.coverThumbnail ? 1 : 0) +
     (incoming.genres.length > 0 ? 1 : 0) +
-    (incoming.rating !== null ? 1 : 0);
+    (incoming.rating !== null ? 1 : 0) +
+    (incoming.synopsis ? 1 : 0);
 
   const preferred = incomingScore > existingScore ? incoming : existing;
-  const preservedAddedAt = new Date(existing.addedAt) <= new Date(incoming.addedAt) ? existing.addedAt : incoming.addedAt;
-  const preservedLoaned = existing.loaned || incoming.loaned;
-  const shouldAdoptIncomingId =
-    existing.id.startsWith("book-") && !incoming.id.startsWith("book-");
+  const preservedAddedAt =
+    new Date(existing.addedAt) <= new Date(incoming.addedAt) ? existing.addedAt : incoming.addedAt;
+  const shouldAdoptIncomingId = existing.id.startsWith("book-") && !incoming.id.startsWith("book-");
 
-  return {
+  return withBookDefaults({
     ...preferred,
     id: shouldAdoptIncomingId ? incoming.id : existing.id,
     addedAt: preservedAddedAt,
-    loaned: preservedLoaned,
-    review: preferred.review ?? existing.review ?? null
-  };
+    loaned: existing.loaned || incoming.loaned,
+    liked: existing.liked || incoming.liked,
+    reread: existing.reread || incoming.reread,
+    review: preferred.review ?? existing.review ?? null,
+  });
 };
 
 export const mergeLibraryBooks = (
@@ -137,7 +170,7 @@ export const mergeLibraryBooks = (
   const byId = new Map<string, LibraryBook>();
   [...existingBooks, ...incomingBooks].forEach((book) => {
     const normalizedId = book.id.trim() || createBookId();
-    const normalizedBook = normalizedId === book.id ? book : { ...book, id: normalizedId };
+    const normalizedBook = withBookDefaults(normalizedId === book.id ? book : { ...book, id: normalizedId });
     const existing = byId.get(normalizedId);
     if (!existing) {
       byId.set(normalizedId, normalizedBook);

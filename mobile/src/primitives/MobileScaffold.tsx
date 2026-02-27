@@ -12,8 +12,11 @@ type MobileScaffoldProps = {
   onTabPress: (tab: MainTabKey) => void;
   onSearchPress: () => void;
   onCameraPress: () => void;
+  cameraEnabled?: boolean;
   onBellPress: () => void;
   onAvatarPress: () => void;
+  onSettingsPress: () => void;
+  onLogoutPress?: () => void;
   children: ReactNode;
 };
 
@@ -31,21 +34,34 @@ export function MobileScaffold({
   onTabPress,
   onSearchPress,
   onCameraPress,
+  cameraEnabled = true,
   onBellPress,
   onAvatarPress,
+  onSettingsPress,
+  onLogoutPress,
   children
 }: MobileScaffoldProps) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   return (
     <View style={styles.screen}>
       <GlowBackdrop />
+      {profileMenuOpen ? (
+        <Pressable
+          style={styles.menuScrim}
+          onPress={() => {
+            setProfileMenuOpen(false);
+          }}
+        />
+      ) : null}
 
       <View style={styles.topBar}>
         <Pressable
           style={styles.brand}
           onPress={() => {
             setAddMenuOpen(false);
+            setProfileMenuOpen(false);
             onTabPress("home");
           }}
         >
@@ -60,11 +76,56 @@ export function MobileScaffold({
             <BellIcon color={colors.textMuted} />
             <View style={styles.bellDot} />
           </Pressable>
-          <Pressable style={styles.avatarButton} onPress={onAvatarPress}>
-            <AppText variant="caption" tone="primary" style={styles.avatarText}>
-              JD
-            </AppText>
-          </Pressable>
+          <View style={styles.profileMenuWrap}>
+            <Pressable
+              style={[styles.avatarButton, profileMenuOpen && styles.avatarButtonOpen]}
+              onPress={() => setProfileMenuOpen((open) => !open)}
+            >
+              <AppText variant="caption" tone="primary" style={styles.avatarText}>
+                JD
+              </AppText>
+            </Pressable>
+
+            {profileMenuOpen ? (
+              <SurfaceMenu>
+                <View style={styles.profileMenuHeader}>
+                  <AppText variant="body">Jordan Diaz</AppText>
+                  <AppText variant="bodySm" tone="muted">
+                    jordan@shelf.app
+                  </AppText>
+                </View>
+                <Pressable
+                  style={styles.profileMenuItem}
+                  onPress={() => {
+                    setProfileMenuOpen(false);
+                    onAvatarPress();
+                  }}
+                >
+                  <AppText variant="body">Account</AppText>
+                </Pressable>
+                <Pressable
+                  style={styles.profileMenuItem}
+                  onPress={() => {
+                    setProfileMenuOpen(false);
+                    onSettingsPress();
+                  }}
+                >
+                  <AppText variant="body">Settings</AppText>
+                </Pressable>
+                <Pressable
+                  style={styles.profileMenuItem}
+                  onPress={() => {
+                    setProfileMenuOpen(false);
+                    onLogoutPress?.();
+                  }}
+                >
+                  <AppText variant="body" tone="danger">
+                    Log out
+                  </AppText>
+                </Pressable>
+              </SurfaceMenu>
+            ) : null}
+          </View>
         </View>
       </View>
 
@@ -80,6 +141,7 @@ export function MobileScaffold({
               activeTab={activeTab}
               onPress={(nextTab) => {
                 setAddMenuOpen(false);
+                setProfileMenuOpen(false);
                 onTabPress(nextTab);
               }}
             />
@@ -93,6 +155,7 @@ export function MobileScaffold({
               activeTab={activeTab}
               onPress={(nextTab) => {
                 setAddMenuOpen(false);
+                setProfileMenuOpen(false);
                 onTabPress(nextTab);
               }}
             />
@@ -100,29 +163,36 @@ export function MobileScaffold({
         </View>
 
         {addMenuOpen ? (
-          <View style={styles.quickActionsRow}>
+          <View style={[styles.quickActionsRow, !cameraEnabled && styles.quickActionsRowSingle]}>
             <QuickActionButton
               label="SEARCH"
               onPress={() => {
                 setAddMenuOpen(false);
+                setProfileMenuOpen(false);
                 onSearchPress();
               }}
               icon={<SearchActionIcon color={colors.background} />}
             />
-            <QuickActionButton
-              label="SCAN"
-              onPress={() => {
-                setAddMenuOpen(false);
-                onCameraPress();
-              }}
-              icon={<ScanActionIcon color={colors.background} />}
-            />
+            {cameraEnabled ? (
+              <QuickActionButton
+                label="SCAN"
+                onPress={() => {
+                  setAddMenuOpen(false);
+                  setProfileMenuOpen(false);
+                  onCameraPress();
+                }}
+                icon={<ScanActionIcon color={colors.background} />}
+              />
+            ) : null}
           </View>
         ) : null}
 
         <Pressable
           style={[styles.addButton, addMenuOpen && styles.addButtonOpen]}
-          onPress={() => setAddMenuOpen((open) => !open)}
+          onPress={() => {
+            setProfileMenuOpen(false);
+            setAddMenuOpen((open) => !open);
+          }}
         >
           <PlusIcon color={addMenuOpen ? colors.textPrimary : colors.background} open={addMenuOpen} />
         </Pressable>
@@ -132,6 +202,10 @@ export function MobileScaffold({
       </View>
     </View>
   );
+}
+
+function SurfaceMenu({ children }: { children: ReactNode }) {
+  return <View style={styles.profileMenu}>{children}</View>;
 }
 
 function GlowBackdrop() {
@@ -309,7 +383,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.lg
+    paddingHorizontal: spacing.lg,
+    zIndex: 20
+  },
+  menuScrim: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 18
   },
   brand: {
     flexDirection: "row",
@@ -323,6 +402,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm
+  },
+  profileMenuWrap: {
+    position: "relative",
+    zIndex: 25
   },
   bellButton: {
     width: 34,
@@ -349,9 +432,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  avatarButtonOpen: {
+    borderColor: colors.accent
+  },
   avatarText: {
     fontSize: 9,
     letterSpacing: 0.4
+  },
+  profileMenu: {
+    position: "absolute",
+    right: 0,
+    top: 38,
+    minWidth: 190,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(212,165,116,0.2)",
+    backgroundColor: "#202739",
+    overflow: "hidden",
+    shadowColor: colors.black,
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 12
+  },
+  profileMenuHeader: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(212,165,116,0.14)",
+    gap: 2
+  },
+  profileMenuItem: {
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+    alignItems: "flex-start",
+    justifyContent: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(212,165,116,0.14)"
   },
   content: {
     flex: 1,
@@ -428,6 +545,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between"
+  },
+  quickActionsRowSingle: {
+    width: 86,
+    justifyContent: "center"
   },
   quickActionWrap: {
     alignItems: "center",

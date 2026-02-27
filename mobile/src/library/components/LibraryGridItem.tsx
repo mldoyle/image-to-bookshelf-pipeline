@@ -14,8 +14,8 @@ export function LibraryGridItem({ book, onOpenBook }: LibraryGridItemProps) {
       <View style={styles.item}>
         <BookCover
           uri={resolveBookCoverUri(book.title, book.coverThumbnail)}
-          width={78}
-          height={117}
+          width={70}
+          height={105}
           lent={book.loaned}
         />
       </View>
@@ -25,7 +25,7 @@ export function LibraryGridItem({ book, onOpenBook }: LibraryGridItemProps) {
 
 const styles = StyleSheet.create({
   item: {
-    width: 78,
-    height: 117
+    width: 70,
+    height: 105
   }
 });

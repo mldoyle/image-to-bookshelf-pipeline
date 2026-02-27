@@ -19,6 +19,7 @@ export type LookupBookItem = {
   categories?: string[];
   averageRating?: number;
   ratingsCount?: number;
+  pageCount?: number;
   imageLinks?: {
     thumbnail?: string;
     smallThumbnail?: string;

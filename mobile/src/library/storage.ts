@@ -4,7 +4,7 @@ import {
   type LibraryBook,
   type LibraryFilters,
   type LibrarySortMode,
-  type LibraryViewMode
+  type LibraryViewMode,
 } from "../types/library";
 
 declare const require: undefined | ((id: string) => unknown);
@@ -27,7 +27,7 @@ const memoryStorage = (() => {
     },
     async setItem(key: string, value: string): Promise<void> {
       data.set(key, value);
-    }
+    },
   } satisfies AsyncStorageLike;
 })();
 
@@ -63,11 +63,24 @@ const parseJson = <T>(raw: string | null): T | null => {
   }
 };
 
+const sortModes: LibrarySortMode[] = [
+  "recent_desc",
+  "recent_asc",
+  "title_asc",
+  "title_desc",
+  "author_asc",
+  "author_desc",
+  "rating_desc",
+  "rating_asc",
+  "published_desc",
+  "published_asc",
+];
+
 export const libraryStorageKeys = {
   books: BOOKS_KEY,
   viewMode: VIEW_MODE_KEY,
   filters: FILTERS_KEY,
-  sortMode: SORT_MODE_KEY
+  sortMode: SORT_MODE_KEY,
 } as const;
 
 export const loadLibraryBooks = async (): Promise<LibraryBook[]> => {
@@ -84,14 +97,23 @@ export const loadLibraryBooks = async (): Promise<LibraryBook[]> => {
       typeof book.rating === "number" && Number.isFinite(book.rating) ? book.rating : null,
     review: typeof book.review === "string" ? book.review : null,
     loaned: Boolean(book.loaned),
+    liked: Boolean(book.liked),
+    reread: Boolean(book.reread),
     coverThumbnail: book.coverThumbnail || null,
     googleBooksId: book.googleBooksId || null,
     publishedYear:
       typeof book.publishedYear === "number" && Number.isFinite(book.publishedYear)
         ? book.publishedYear
         : null,
+    publishedDate: book.publishedDate || null,
+    pageCount:
+      typeof book.pageCount === "number" && Number.isFinite(book.pageCount)
+        ? Math.round(book.pageCount)
+        : null,
+    synopsis: typeof book.synopsis === "string" ? book.synopsis : null,
+    infoLink: typeof book.infoLink === "string" ? book.infoLink : null,
     addedAt: book.addedAt || new Date().toISOString(),
-    source: book.source === "search" ? "search" : "scan"
+    source: book.source === "search" ? "search" : "scan",
   }));
 };
 
@@ -110,8 +132,8 @@ export const saveLibraryViewMode = async (viewMode: LibraryViewMode): Promise<vo
 
 export const loadLibrarySortMode = async (): Promise<LibrarySortMode> => {
   const raw = await asyncStorage.getItem(SORT_MODE_KEY);
-  if (raw === "recent_asc") {
-    return "recent_asc";
+  if (raw && sortModes.includes(raw as LibrarySortMode)) {
+    return raw as LibrarySortMode;
   }
   return DEFAULT_LIBRARY_SORT_MODE;
 };
@@ -142,7 +164,7 @@ export const loadLibraryFilters = async (): Promise<LibraryFilters> => {
     loaned:
       parsed.loaned === "loaned" || parsed.loaned === "not_loaned"
         ? parsed.loaned
-        : "all"
+        : "all",
   };
 };
 

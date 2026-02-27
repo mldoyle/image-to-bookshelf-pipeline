@@ -5,13 +5,26 @@ from __future__ import annotations
 from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
+from sqlalchemy import and_
 
 from ..db.extension import db
+from ..db.models import Loan
 from ..db.service import (
+    apply_user_profile_patch,
+    create_loan,
+    get_friend,
+    get_loan,
     get_or_create_dev_user,
     get_user_book,
+    list_friends,
+    list_loans,
     list_user_books,
+    serialize_friend,
+    serialize_loan,
     serialize_user_book,
+    serialize_user_profile,
+    update_loan,
+    upsert_friend,
     upsert_user_book,
 )
 
@@ -41,6 +54,32 @@ def _extract_book_payload() -> dict[str, Any]:
     if isinstance(payload.get("book"), dict):
         payload = payload["book"]
     return payload if isinstance(payload, dict) else {}
+
+
+@library_bp.get("/me/profile")
+def get_my_profile():
+    user = _current_user()
+    payload = serialize_user_profile(db.session, user=user)
+    db.session.commit()
+    return jsonify({"profile": payload}), 200
+
+
+@library_bp.patch("/me/profile")
+def patch_my_profile():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_payload"}), 400
+
+    try:
+        user = _current_user()
+        apply_user_profile_patch(user, payload)
+        db.session.flush()
+        profile = serialize_user_profile(db.session, user=user)
+        db.session.commit()
+        return jsonify({"profile": profile}), 200
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "write_failed", "message": str(exc)}), 500
 
 
 @library_bp.get("/me/books")
@@ -112,12 +151,17 @@ def patch_my_book(user_book_id: str):
         "loaned",
         "rating",
         "review",
+        "liked",
+        "reread",
         "shelf",
         "status",
         "source",
         "startedAt",
         "finishedAt",
         "addedAt",
+        "pageCount",
+        "synopsis",
+        "infoLink",
     }
     write_payload = {key: value for key, value in payload.items() if key in mutable_fields}
 
@@ -128,6 +172,7 @@ def patch_my_book(user_book_id: str):
         current["title"] = row.book.title
         current["author"] = ", ".join(row.book.authors_json or [])
         current["publishedYear"] = row.book.published_year
+        current["publishedDate"] = row.book.published_date
         current["genres"] = row.book.categories_json or []
         current["coverThumbnail"] = row.book.thumbnail_url
         current["googleBooksId"] = row.book.google_books_id
@@ -153,6 +198,153 @@ def delete_my_book(user_book_id: str):
         db.session.delete(row)
         db.session.commit()
         return jsonify({"status": "deleted", "id": user_book_id}), 200
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "delete_failed", "message": str(exc)}), 500
+
+
+@library_bp.get("/me/friends")
+def list_my_friends():
+    user = _current_user()
+    items = [serialize_friend(row) for row in list_friends(db.session, user_id=user.id)]
+    db.session.commit()
+    return jsonify({"count": len(items), "items": items}), 200
+
+
+@library_bp.post("/me/friends")
+def add_my_friend():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_payload"}), 400
+
+    try:
+        user = _current_user()
+        friend, created = upsert_friend(db.session, user=user, payload=payload)
+        db.session.commit()
+        return jsonify({"item": serialize_friend(friend)}), 201 if created else 200
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "write_failed", "message": str(exc)}), 500
+
+
+@library_bp.patch("/me/friends/<string:friend_id>")
+def patch_my_friend(friend_id: str):
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_payload"}), 400
+
+    user = _current_user()
+    friend = get_friend(db.session, user_id=user.id, friend_id=friend_id)
+    if friend is None:
+        db.session.commit()
+        return jsonify({"error": "not_found"}), 404
+
+    try:
+        updated, _ = upsert_friend(db.session, user=user, payload=payload, existing=friend)
+        db.session.commit()
+        return jsonify({"item": serialize_friend(updated)}), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "write_failed", "message": str(exc)}), 500
+
+
+@library_bp.delete("/me/friends/<string:friend_id>")
+def delete_my_friend(friend_id: str):
+    user = _current_user()
+    friend = get_friend(db.session, user_id=user.id, friend_id=friend_id)
+    if friend is None:
+        db.session.commit()
+        return jsonify({"error": "not_found"}), 404
+
+    try:
+        db.session.delete(friend)
+        db.session.commit()
+        return jsonify({"status": "deleted", "id": friend_id}), 200
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "delete_failed", "message": str(exc)}), 500
+
+
+@library_bp.get("/me/loans")
+def list_my_loans():
+    status = (request.args.get("status") or "").strip().lower() or None
+    user = _current_user()
+    items = [serialize_loan(row) for row in list_loans(db.session, user_id=user.id, status=status)]
+    db.session.commit()
+    return jsonify({"count": len(items), "items": items}), 200
+
+
+@library_bp.post("/me/loans")
+def add_my_loan():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_payload"}), 400
+
+    try:
+        user = _current_user()
+        created = create_loan(db.session, user=user, payload=payload)
+        db.session.commit()
+        return jsonify({"item": serialize_loan(created)}), 201
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "write_failed", "message": str(exc)}), 500
+
+
+@library_bp.patch("/me/loans/<string:loan_id>")
+def patch_my_loan(loan_id: str):
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_payload"}), 400
+
+    user = _current_user()
+    loan = get_loan(db.session, user_id=user.id, loan_id=loan_id)
+    if loan is None:
+        db.session.commit()
+        return jsonify({"error": "not_found"}), 404
+
+    try:
+        updated = update_loan(db.session, loan=loan, payload=payload)
+        db.session.commit()
+        return jsonify({"item": serialize_loan(updated)}), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "write_failed", "message": str(exc)}), 500
+
+
+@library_bp.delete("/me/loans/<string:loan_id>")
+def delete_my_loan(loan_id: str):
+    user = _current_user()
+    loan = get_loan(db.session, user_id=user.id, loan_id=loan_id)
+    if loan is None:
+        db.session.commit()
+        return jsonify({"error": "not_found"}), 404
+
+    try:
+        user_book = loan.user_book
+        db.session.delete(loan)
+
+        active_remaining = (
+            db.session.query(Loan)
+            .filter(and_(Loan.user_book_id == user_book.id, Loan.status == "active"))
+            .count()
+            > 0
+        )
+        user_book.loaned = active_remaining
+
+        db.session.commit()
+        return jsonify({"status": "deleted", "id": loan_id}), 200
     except Exception as exc:
         db.session.rollback()
         return jsonify({"error": "delete_failed", "message": str(exc)}), 500

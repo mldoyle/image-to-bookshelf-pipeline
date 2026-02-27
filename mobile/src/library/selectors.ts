@@ -6,14 +6,55 @@ import {
   UNRATED,
   type LibraryBook,
   type LibraryFilters,
-  type LibrarySortMode
+  type LibrarySortMode,
 } from "../types/library";
 
-const sortByRecentlyAdded = (books: LibraryBook[], sortMode: LibrarySortMode): LibraryBook[] =>
-  [...books].sort((left, right) => {
-    const delta = new Date(right.addedAt).getTime() - new Date(left.addedAt).getTime();
-    return sortMode === "recent_asc" ? -delta : delta;
+const compareStrings = (left: string, right: string): number =>
+  left.localeCompare(right, undefined, { sensitivity: "base" });
+
+const scoreRating = (value: number | null): number => (value === null ? -1 : value);
+const scoreYear = (value: number | null): number => (value === null ? -1 : value);
+
+export const sortLibraryBooks = (books: LibraryBook[], sortMode: LibrarySortMode): LibraryBook[] => {
+  return [...books].sort((left, right) => {
+    const byRecent =
+      new Date(right.addedAt).getTime() - new Date(left.addedAt).getTime();
+
+    if (sortMode === "recent_desc") {
+      return byRecent;
+    }
+    if (sortMode === "recent_asc") {
+      return -byRecent;
+    }
+
+    if (sortMode === "title_asc") {
+      return compareStrings(left.title, right.title) || byRecent;
+    }
+    if (sortMode === "title_desc") {
+      return -compareStrings(left.title, right.title) || byRecent;
+    }
+
+    if (sortMode === "author_asc") {
+      return compareStrings(left.author, right.author) || compareStrings(left.title, right.title);
+    }
+    if (sortMode === "author_desc") {
+      return -compareStrings(left.author, right.author) || compareStrings(left.title, right.title);
+    }
+
+    if (sortMode === "rating_desc") {
+      return scoreRating(right.rating) - scoreRating(left.rating) || byRecent;
+    }
+    if (sortMode === "rating_asc") {
+      return scoreRating(left.rating) - scoreRating(right.rating) || byRecent;
+    }
+
+    if (sortMode === "published_desc") {
+      return scoreYear(right.publishedYear) - scoreYear(left.publishedYear) || byRecent;
+    }
+
+    return scoreYear(left.publishedYear) - scoreYear(right.publishedYear) || byRecent;
   });
+};
 
 export type LibraryFilterOptions = {
   genres: string[];
@@ -138,5 +179,5 @@ export const selectVisibleLibraryBooks = (
     return true;
   });
 
-  return sortByRecentlyAdded(filtered, sortMode);
+  return sortLibraryBooks(filtered, sortMode);
 };

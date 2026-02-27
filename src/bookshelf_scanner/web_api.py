@@ -194,6 +194,7 @@ def create_app(
             "categories": volume_info.get("categories") or [],
             "averageRating": volume_info.get("averageRating"),
             "ratingsCount": volume_info.get("ratingsCount"),
+            "pageCount": volume_info.get("pageCount"),
             "imageLinks": {
                 "thumbnail": (volume_info.get("imageLinks") or {}).get("thumbnail"),
                 "smallThumbnail": (volume_info.get("imageLinks") or {}).get("smallThumbnail"),
