@@ -1,143 +1,82 @@
-# Bookshelf Scanner
+# Image to Bookshelf Monorepo
 
-Scan bookshelf images, extract titles/authors, enrich with Google Books metadata, and manage a local library through a Flask API plus mobile/web clients.
+Production-oriented monorepo for the Bookshelf stack.
 
-## Features
+## Repository Layout
 
-- YOLO-based book spine detection.
-- Moondream-based title/author extraction.
-- Google Books lookup and compact result shaping.
-- Flask API for `/detect/spines`, `/scan/capture`, and `/library/me/*`.
-- React Native mobile app and Vite web harness for capture/review workflows.
-- SQLite-by-default local persistence (`data/dev.db`), with `DATABASE_URL` override support.
+- `apps/backend`: Flask backend service (`bookshelf_backend`)
+- `apps/client`: Expo application (mobile + web target)
+- `tools/web-harness`: Browser harness for detector/scan iteration
+- `tools/scanner-core`: Shared TypeScript detection/tracking utilities
+- `docs/architecture`: System and repo architecture docs
+- `docs/runbooks`: Operational runbooks
+- `docs/archive`: Archived plans and baseline artifacts
 
-## Setup
+See [`docs/architecture/repo-structure.md`](docs/architecture/repo-structure.md) for the full tree.
 
-```bash
-cd /Users/mattdoyle/Projects/image-to-bookshelf
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
+## Quickstart
 
-Optional GPU extras:
+### 1) Backend
 
 ```bash
-pip install -e ".[gpu,dev]"
+cd apps/backend
+python3 -m venv ../../.venv
+source ../../.venv/bin/activate
+pip install -e .[dev]
+./scripts/migrate-up.sh
+bookshelf-backend-api --host 0.0.0.0 --port 5001
 ```
 
-## Environment
-
-Create `secrets/.env` (optional but recommended):
+### 2) Client (Expo)
 
 ```bash
-GOOGLE_BOOKS_API_KEY=your_google_books_api_key
-
-# Optional DB override
-# If omitted, backend defaults to sqlite:///.../data/dev.db
-# DATABASE_URL=postgresql://user:password@host:5432/bookshelf
+cd apps/client
+npm install
+npm run web
 ```
 
-## API Startup
-
-Preferred command (uses console script from `pyproject.toml`):
+### 3) Web Harness
 
 ```bash
-source .venv/bin/activate
-bookshelf-scanner-api --host localhost --port 5001
+cd tools/web-harness
+npm install
+npm run dev
 ```
 
-Equivalent module command:
+### 4) Scanner Core Tests
 
 ```bash
-source .venv/bin/activate
-python -m bookshelf_scanner.web_api --host 0.0.0.0  --port 5001
+cd tools/scanner-core
+npm install
+npm test -- --run
 ```
 
-For LAN/mobile device access, bind all interfaces:
+## Deterministic Command Matrix
 
-```bash
-bookshelf-scanner-api --host 0.0.0.0 --port 5001
-```
+- Backend tests: `cd apps/backend && ../../.venv/bin/pytest -q`
+- Backend lint: `cd apps/backend && ../../.venv/bin/ruff check src tests`
+- Backend format check: `cd apps/backend && ../../.venv/bin/black --check src tests`
+- Client typecheck: `cd apps/client && npm run typecheck`
+- Web harness build: `cd tools/web-harness && npm run build`
+- Scanner-core tests: `cd tools/scanner-core && npm test -- --run`
 
-## Database Behavior
+## Key Backend Environment Variables
 
-- Default DB: `data/dev.db` (created automatically).
-- Tables are auto-created on startup.
-- `DATABASE_URL` overrides SQLite default.
-- Current library routes use a dev identity fallback when auth headers are absent.
+- `BOOKSHELF_ENV=development|production`
+- `BOOKSHELF_ENABLE_DEV_IDENTITY_FALLBACK=true|false`
+- `BOOKSHELF_SCAN_ENABLED=true|false`
+- `BOOKSHELF_ALLOWED_ORIGINS=*` (dev default)
+- `BOOKSHELF_MODEL_PATH=/path/to/model.pt`
+- `DATABASE_URL=...` (required in production)
+- `GOOGLE_BOOKS_API_KEY=...`
 
-Dev identity headers:
+Production guardrails are enforced:
 
-- `X-Bookshelf-User-Email`
-- `X-Bookshelf-Username`
+- Startup fails if `BOOKSHELF_ENV=production` and dev identity fallback is enabled.
+- Startup fails if `BOOKSHELF_ENV=production` without a database URL.
 
-If these headers are not sent, all clients use the same default local dev user.
+## Additional Docs
 
-## Core Endpoints
-
-- `GET /health`
-- `GET /`
-- `GET /books/search`
-- `POST /detect/spines`
-- `POST /scan/capture`
-- `GET /library/me/books`
-- `POST /library/me/books`
-- `POST /library/me/books/batch`
-- `PATCH /library/me/books/:id`
-- `DELETE /library/me/books/:id`
-
-## CLI Usage
-
-Extractor:
-
-```bash
-python -m bookshelf_scanner.extractor INPUT [OPTIONS]
-```
-
-Lookup:
-
-```bash
-python -m bookshelf_scanner.lookup outputs/extractions/test.csv --output lookup_outputs.csv
-```
-
-Notes:
-
-- `bookshelf-scanner scan ...` is still a placeholder command.
-- Use module commands above for active extractor/lookup flows.
-
-## Web Harness Workflow
-
-1. Start backend API on `5000` or `5001`.
-2. Run harness:
-   - `cd web-harness`
-   - `npm install`
-   - `npm run dev`
-3. In harness:
-   - Set detector mode to `endpoint`.
-   - Set detector URL to `/detect/spines`.
-   - Set capture URL to `/scan/capture`.
-
-## Mobile Workflow
-
-1. Start backend API with LAN-safe host:
-   - `bookshelf-scanner-api --host 0.0.0.0 --port 5001`
-2. Start Expo app:
-   - `cd mobile`
-   - `npm install`
-   - `npm run start`
-3. Use base URLs:
-   - Android emulator: `http://10.0.2.2:5001`
-   - iOS simulator: `http://127.0.0.1:5001`
-   - Physical device: `http://<your-mac-lan-ip>:5001`
-
-## Importing to Goodreads
-
-1. Run extraction:
-   - `python -m bookshelf_scanner.extractor outputs/detections/my_shelf_crops --output outputs/extractions/my_shelf.csv`
-2. Open [Goodreads Import](https://www.goodreads.com/review/import).
-3. Upload CSV and confirm.
-
-## License
-
-MIT
+- Architecture: [`docs/architecture/backend-runtime.md`](docs/architecture/backend-runtime.md)
+- Local dev runbook: [`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
+- Deploy prep checklist: [`docs/runbooks/deploy-prep-vercel-neon.md`](docs/runbooks/deploy-prep-vercel-neon.md)

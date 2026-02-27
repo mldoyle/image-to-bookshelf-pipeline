@@ -1,0 +1,4 @@
+Single-database migration repository for Bookshelf backend.
+
+Run from apps/backend:
+  PYTHONPATH=src FLASK_APP=bookshelf_backend.app.factory:create_app flask db upgrade

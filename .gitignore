@@ -1,16 +1,42 @@
+# Python
 .venv/
-.pytest_cache/
-.cache/
 __pycache__/
 *.pyc
-.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# JavaScript / TypeScript
 node_modules/
+apps/**/node_modules/
+tools/**/node_modules/
 dist/
+build/
+apps/**/dist/
+tools/**/dist/
+*.tsbuildinfo
+.vite/
+
+# Local runtime outputs
+outputs/
 data/dev.db
 *.db
+yolov8n.pt
+apps/backend/.local/
 
-# Local secrets
-secrets/.env
+# Environment files
 .env
+apps/**/.env
+tools/**/.env
+secrets/.env
+
+# OS and local cache
+.cache/
+.DS_Store
+.expo/
+apps/**/.expo/
+tools/**/.expo/
+
+# Legacy local directories
 Cardstackapprovalinterface/
 Shelfappdesignsystem/

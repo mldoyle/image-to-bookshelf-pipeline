@@ -1,0 +1,54 @@
+[project]
+name = "bookshelf-backend"
+version = "1.0.0"
+description = "Scan bookshelves and export to Goodreads/StoryGraph"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "ultralytics>=8.0.0",
+    "transformers>=4.40.0,<5.0.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "pillow>=10.0.0",
+    "einops>=0.7.0",
+    "pyvips-binary==8.16.0",
+    "pyvips==2.2.3",
+    "requests>=2.31.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "typer[all]>=0.9.0",
+    "rich>=13.0.0",
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "flask-sqlalchemy>=3.1.0",
+    "flask-migrate>=4.0.0",
+    "psycopg[binary]>=3.1.0",
+]
+
+[project.optional-dependencies]
+gpu = ["accelerate>=0.25.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=24.0.0",
+    "ruff>=0.8.0",
+]
+
+[project.scripts]
+bookshelf-backend = "bookshelf_backend.cli:app"
+bookshelf-backend-api = "bookshelf_backend.web_api:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]

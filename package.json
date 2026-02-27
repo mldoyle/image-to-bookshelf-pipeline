@@ -1,0 +1,9 @@
+{
+  "name": "image-to-bookshelf-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/client",
+    "tools/web-harness",
+    "tools/scanner-core"
+  ]
+}

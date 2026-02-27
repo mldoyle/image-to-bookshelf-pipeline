@@ -1,3 +1,0 @@
-[console_scripts]
-bookshelf-scanner = bookshelf_scanner.cli:app
-bookshelf-scanner-api = bookshelf_scanner.web_api:main

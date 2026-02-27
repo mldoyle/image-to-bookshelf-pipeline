@@ -1,0 +1,3 @@
+[console_scripts]
+bookshelf-backend = bookshelf_backend.cli:app
+bookshelf-backend-api = bookshelf_backend.web_api:main
