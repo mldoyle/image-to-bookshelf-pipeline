@@ -9,6 +9,7 @@ export type MainTabKey = "home" | "library" | "loans" | "profile";
 
 type MobileScaffoldProps = {
   activeTab: MainTabKey;
+  pageTitle?: string | null;
   onTabPress: (tab: MainTabKey) => void;
   onSearchPress: () => void;
   onCameraPress: () => void;
@@ -31,6 +32,7 @@ const TOP_SAFE_INSET = Platform.select({ ios: 44, android: 0, default: 0 }) ?? 0
 
 export function MobileScaffold({
   activeTab,
+  pageTitle = null,
   onTabPress,
   onSearchPress,
   onCameraPress,
@@ -57,6 +59,13 @@ export function MobileScaffold({
       ) : null}
 
       <View style={styles.topBar}>
+        {pageTitle ? (
+          <View pointerEvents="none" style={styles.centerTitleWrap}>
+            <AppText variant="label" tone="muted" style={styles.centerTitleText}>
+              {pageTitle}
+            </AppText>
+          </View>
+        ) : null}
         <Pressable
           style={styles.brand}
           onPress={() => {
@@ -375,6 +384,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject
   },
   topBar: {
+    position: "relative",
     height: 59 + TOP_SAFE_INSET,
     paddingTop: TOP_SAFE_INSET,
     borderBottomWidth: 1,
@@ -385,6 +395,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
     zIndex: 20
+  },
+  centerTitleWrap: {
+    position: "absolute",
+    top: TOP_SAFE_INSET,
+    left: 70,
+    right: 70,
+    height: 59,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  centerTitleText: {
+    letterSpacing: 0.8
   },
   menuScrim: {
     ...StyleSheet.absoluteFillObject,

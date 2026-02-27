@@ -22,6 +22,7 @@ type SortDirection = "asc" | "desc";
 
 type LibraryScreenProps = {
   books: LibraryBook[];
+  showInlineTitle?: boolean;
   viewMode: LibraryViewMode;
   sortMode: LibrarySortMode;
   filters: LibraryFilters;
@@ -73,6 +74,7 @@ const sortModeFor = (field: SortField, direction: SortDirection): LibrarySortMod
 
 export function LibraryScreen({
   books,
+  showInlineTitle = true,
   viewMode,
   sortMode,
   filters,
@@ -111,9 +113,11 @@ export function LibraryScreen({
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <AppText variant="label" tone="muted" style={styles.headerTitle}>
-          Library
-        </AppText>
+        {showInlineTitle ? (
+          <AppText variant="label" tone="muted" style={styles.headerTitle}>
+            Library
+          </AppText>
+        ) : null}
         <AppText variant="bodySm" tone="muted">
           {books.length} books · {loanedCount} currently lent out
         </AppText>

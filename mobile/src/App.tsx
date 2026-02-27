@@ -34,7 +34,7 @@ import { SearchScreen } from "./library/SearchScreen";
 import { SettingsScreen } from "./library/SettingsScreen";
 import type { NewLoanSubmitPayload } from "./library/components/NewLoanSheet";
 import { mergeLibraryBooks, toLibraryBookFromFeedItem, toLibraryBookFromLookupItem } from "./library/merge";
-import { BookTurnerAnimation, MobileScaffold, type MainTabKey } from "./primitives";
+import { BookTurnerAnimation, MobileScaffold, type MainTabKey, WebDesktopScaffold } from "./primitives";
 import {
   loadLibrarySortMode,
   loadLibraryBooks,
@@ -49,6 +49,7 @@ import { BookApprovalStack, type ReviewStackCard } from "./review/BookApprovalSt
 import { colors } from "./theme/colors";
 import { fontFamilies } from "./theme/tokens";
 import { useAppFonts } from "./utils/fonts";
+import { injectWebFonts, useWebViewportMode } from "./utils/web";
 import {
   DEFAULT_LIBRARY_FILTERS,
   DEFAULT_LIBRARY_SORT_MODE,
@@ -300,6 +301,7 @@ const resolveMetroHost = (): string | null => {
 };
 
 export default function App() {
+  const { isWebDesktop } = useWebViewportMode();
   const [fontsLoaded, fontError] = useAppFonts({
     "SourceSerif4-Regular": require("../assets/fonts/Source_Serif_4/static/SourceSerif4-Regular.ttf"),
     "SourceSerif4-SemiBold": require("../assets/fonts/Source_Serif_4/static/SourceSerif4-SemiBold.ttf"),
@@ -344,6 +346,26 @@ export default function App() {
     () => (selectedBookId ? libraryBooks.find((book) => book.id === selectedBookId) ?? null : null),
     [libraryBooks, selectedBookId]
   );
+  const mobileTopTitle = useMemo(() => {
+    if (phase === "settings") {
+      return "Settings";
+    }
+
+    if (activeTab === "home") {
+      return "Home";
+    }
+    if (activeTab === "library") {
+      return "Library";
+    }
+    if (activeTab === "loans") {
+      return "Loans";
+    }
+    return "Profile";
+  }, [activeTab, phase]);
+
+  useEffect(() => {
+    injectWebFonts();
+  }, []);
 
   useEffect(() => {
     if (phase === "book_profile" && !selectedBook) {
@@ -1020,88 +1042,123 @@ export default function App() {
     );
   }
 
+  const shellContent = (
+    <>
+      {phase === "settings" ? (
+        <SettingsScreen apiBaseUrl={apiBaseUrl} showInlineTitle={false} onApiBaseUrlChange={setApiBaseUrl} />
+      ) : null}
+
+      {phase !== "settings" && activeTab === "home" ? (
+        <HomeScreen
+          books={libraryBooks}
+          layoutMode={isWebDesktop ? "web-desktop" : "mobile"}
+          showInlineTitle={false}
+          onOpenBook={(book) => {
+            setSelectedBookId(book.id);
+            setPhase("book_profile");
+          }}
+          onViewLibrary={() => {
+            setPhase("library");
+            setActiveTab("library");
+          }}
+        />
+      ) : null}
+
+      {phase !== "settings" && activeTab === "library" ? (
+        <LibraryScreen
+          books={libraryBooks}
+          showInlineTitle={false}
+          viewMode={libraryViewMode}
+          sortMode={librarySortMode}
+          filters={libraryFilters}
+          onSortModeChange={onSortModeChange}
+          onFiltersChange={onFiltersChange}
+          onViewModeChange={onViewModeChange}
+          onOpenBook={(book) => {
+            setSelectedBookId(book.id);
+            setPhase("book_profile");
+          }}
+        />
+      ) : null}
+
+      {phase !== "settings" && activeTab === "loans" ? (
+        <LoansScreen
+          books={libraryBooks}
+          showInlineTitle={false}
+          loans={libraryLoans}
+          friends={libraryFriends}
+          onCreateLoan={onCreateLoan}
+          onMarkReturned={onMarkLoanReturned}
+          onOpenBook={(book) => {
+            setSelectedBookId(book.id);
+            setPhase("book_profile");
+          }}
+        />
+      ) : null}
+
+      {phase !== "settings" && activeTab === "profile" ? (
+        <ProfileScreen
+          profile={userProfile}
+          books={libraryBooks}
+          friends={libraryFriends}
+          onSaveProfile={onSaveProfile}
+        />
+      ) : null}
+    </>
+  );
+
   return (
     <>
       <StatusBar style="light" />
       <View style={styles.mainSafeArea}>
-        <MobileScaffold
-          activeTab={activeTab}
-          onTabPress={(tab) => {
-            setPhase("library");
-            setActiveTab(tab);
-          }}
-          onSearchPress={() => setPhase("search")}
-          onCameraPress={startCameraSession}
-          cameraEnabled={cameraEnabled}
-          onBellPress={() => {}}
-          onAvatarPress={() => {
-            setPhase("library");
-            setActiveTab("profile");
-          }}
-          onSettingsPress={() => {
-            setPhase("settings");
-          }}
-          onLogoutPress={() => {
-            Alert.alert("Logged out", "Sign-out wiring is not connected yet.");
-          }}
-        >
-          {phase === "settings" ? (
-            <SettingsScreen apiBaseUrl={apiBaseUrl} onApiBaseUrlChange={setApiBaseUrl} />
-          ) : null}
-
-          {phase !== "settings" && activeTab === "home" ? (
-            <HomeScreen
-              books={libraryBooks}
-              onOpenBook={(book) => {
-                setSelectedBookId(book.id);
-                setPhase("book_profile");
-              }}
-              onViewLibrary={() => {
-                setPhase("library");
-                setActiveTab("library");
-              }}
-            />
-          ) : null}
-
-          {phase !== "settings" && activeTab === "library" ? (
-            <LibraryScreen
-              books={libraryBooks}
-              viewMode={libraryViewMode}
-              sortMode={librarySortMode}
-              filters={libraryFilters}
-              onSortModeChange={onSortModeChange}
-              onFiltersChange={onFiltersChange}
-              onViewModeChange={onViewModeChange}
-              onOpenBook={(book) => {
-                setSelectedBookId(book.id);
-                setPhase("book_profile");
-              }}
-            />
-          ) : null}
-
-          {phase !== "settings" && activeTab === "loans" ? (
-            <LoansScreen
-              books={libraryBooks}
-              loans={libraryLoans}
-              friends={libraryFriends}
-              onCreateLoan={onCreateLoan}
-              onMarkReturned={onMarkLoanReturned}
-              onOpenBook={(book) => {
-                setSelectedBookId(book.id);
-                setPhase("book_profile");
-              }}
-            />
-          ) : null}
-
-          {phase !== "settings" && activeTab === "profile" ? (
-            <ProfileScreen
-              profile={userProfile}
-              books={libraryBooks}
-              friends={libraryFriends}
-              onSaveProfile={onSaveProfile}
-            />
-          ) : null}
-        </MobileScaffold>
+        {isWebDesktop ? (
+          <WebDesktopScaffold
+            activeTab={activeTab}
+            onTabPress={(tab) => {
+              setPhase("library");
+              setActiveTab(tab);
+            }}
+            onSearchPress={() => setPhase("search")}
+            onBellPress={() => {}}
+            onAvatarPress={() => {
+              setPhase("library");
+              setActiveTab("profile");
+            }}
+            onSettingsPress={() => {
+              setPhase("settings");
+            }}
+            onLogoutPress={() => {
+              Alert.alert("Logged out", "Sign-out wiring is not connected yet.");
+            }}
+          >
+            {shellContent}
+          </WebDesktopScaffold>
+        ) : (
+          <MobileScaffold
+            activeTab={activeTab}
+            pageTitle={mobileTopTitle}
+            onTabPress={(tab) => {
+              setPhase("library");
+              setActiveTab(tab);
+            }}
+            onSearchPress={() => setPhase("search")}
+            onCameraPress={startCameraSession}
+            cameraEnabled={cameraEnabled}
+            onBellPress={() => {}}
+            onAvatarPress={() => {
+              setPhase("library");
+              setActiveTab("profile");
+            }}
+            onSettingsPress={() => {
+              setPhase("settings");
+            }}
+            onLogoutPress={() => {
+              Alert.alert("Logged out", "Sign-out wiring is not connected yet.");
+            }}
+          >
+            {shellContent}
+          </MobileScaffold>
+        )}
       </View>
     </>
   );

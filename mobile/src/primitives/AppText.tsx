@@ -54,12 +54,14 @@ const variantStyles = StyleSheet.create({
   caption: {
     fontFamily: fontFamilies.sansMedium,
     fontSize: typography.caption,
-    lineHeight: lineHeights.caption
+    lineHeight: lineHeights.caption,
+    fontWeight: "500"
   },
   label: {
     fontFamily: fontFamilies.sansBold,
     fontSize: typography.label,
     lineHeight: lineHeights.label,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.4
   },
@@ -67,6 +69,7 @@ const variantStyles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontSize: typography.chip,
     lineHeight: lineHeights.chip,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6
   }

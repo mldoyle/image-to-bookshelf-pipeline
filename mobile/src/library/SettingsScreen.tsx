@@ -4,16 +4,23 @@ import { spacing } from "../theme/tokens";
 
 type SettingsScreenProps = {
   apiBaseUrl: string;
+  showInlineTitle?: boolean;
   onApiBaseUrlChange: (value: string) => void;
 };
 
-export function SettingsScreen({ apiBaseUrl, onApiBaseUrlChange }: SettingsScreenProps) {
+export function SettingsScreen({
+  apiBaseUrl,
+  showInlineTitle = true,
+  onApiBaseUrlChange
+}: SettingsScreenProps) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <AppText variant="label" tone="muted">
-          Settings
-        </AppText>
+        {showInlineTitle ? (
+          <AppText variant="label" tone="muted">
+            Settings
+          </AppText>
+        ) : null}
         <AppText variant="bodySm" tone="muted">
           Configure application and backend connectivity.
         </AppText>

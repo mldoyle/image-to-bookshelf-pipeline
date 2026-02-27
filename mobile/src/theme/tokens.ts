@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { colors } from "./colors";
 
 export const spacing = {
@@ -42,13 +43,15 @@ export const lineHeights = {
   chip: 13
 } as const;
 
+const webSansFamily = "Raleway";
+
 export const fontFamilies = {
   serifRegular: "SourceSerif4-Regular",
   serifSemiBold: "SourceSerif4-SemiBold",
   serifBold: "SourceSerif4-Bold",
-  sansRegular: "Raleway-Regular",
-  sansMedium: "Raleway-Medium",
-  sansBold: "Raleway-Bold"
+  sansRegular: Platform.select({ web: webSansFamily, default: "Raleway-Regular" }) ?? "Raleway-Regular",
+  sansMedium: Platform.select({ web: webSansFamily, default: "Raleway-Medium" }) ?? "Raleway-Medium",
+  sansBold: Platform.select({ web: webSansFamily, default: "Raleway-Bold" }) ?? "Raleway-Bold"
 } as const;
 
 export const controlHeights = {

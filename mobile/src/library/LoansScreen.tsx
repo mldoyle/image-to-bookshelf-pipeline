@@ -12,6 +12,7 @@ type LoansFilter = "all" | "active" | "returned";
 
 type LoansScreenProps = {
   books: LibraryBook[];
+  showInlineTitle?: boolean;
   loans: LibraryLoan[];
   friends: LibraryFriend[];
   onOpenBook: (book: LibraryBook) => void;
@@ -32,6 +33,7 @@ const shortDate = (value: string | null): string | null => {
 
 export function LoansScreen({
   books,
+  showInlineTitle = true,
   loans,
   friends,
   onOpenBook,
@@ -61,9 +63,11 @@ export function LoansScreen({
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <AppText variant="label" tone="muted" style={styles.headerTitle}>
-          Loans
-        </AppText>
+        {showInlineTitle ? (
+          <AppText variant="label" tone="muted" style={styles.headerTitle}>
+            Loans
+          </AppText>
+        ) : null}
         <AppText variant="bodySm" tone="muted">
           Track books you've lent to friends
         </AppText>
